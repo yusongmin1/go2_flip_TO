@@ -25,6 +25,10 @@ from visualiser.visualiser import TrajoptVisualiser
 
 import params as pars
 
+from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
+
+_REPO_ROOT = ensure_repo_root()
+
 VIS = pars.VIS
 DT = 0.05
 TARGET_SPEED_M_S = 1.0
@@ -129,6 +133,19 @@ print(
     f"(IPOPT iterations: {result['iter_count']})"
 )
 opti.save_solution("quad_walk_forward_1mps")
+
+export_go2_agile_trajectory(
+    _REPO_ROOT,
+    result,
+    robot.model,
+    "quad_walk_forward_1mps",
+    extra_meta={
+        "source_script": "quad_walk_forward.py",
+        "target_speed_m_s": TARGET_SPEED_M_S,
+        "dt_nominal": DT,
+    },
+    log_prefix="quad_walk_forward",
+)
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]

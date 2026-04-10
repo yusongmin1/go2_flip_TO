@@ -100,22 +100,21 @@ Always run commands from the repository root with `conda` activated and `PYTHONP
 
 ```bash
 python src/examples/simple/go2_trajopt.py --vis
-python src/examples/simple/talos_trajopt.py --vis
-python src/examples/simple/g1_trajopt.py --vis
 ```
 
 **Agile motions** (`src/examples/agile_exps/`):
 
 ```bash
-python src/examples/agile_exps/walk.py --vis
+python src/examples/agile_exps/quad_walk_forward.py --vis
+python src/examples/agile_exps/quad_walk_backward_ramp.py --vis
 python src/examples/agile_exps/quad_sideflip.py --vis
 python src/examples/agile_exps/quad_backflip.py --vis
 python src/examples/agile_exps/quad_frontflip.py --vis
-python src/examples/agile_exps/humanoid_flip.py --vis
-python src/examples/agile_exps/humanoid_jump.py --vis
-python src/examples/agile_exps/handstand.py --vis
-python src/examples/agile_exps/hopscotch.py --vis
+python src/examples/agile_exps/quad_jump_forward.py --vis
+python src/examples/agile_exps/quad_spin_inplace.py --vis
 ```
+
+All **`src/examples/agile_exps/quad_*.py`** Go2 demos export the same way after a successful solve: `datasets/go2/trajectories/<run_name>/` (NPZ/CSV) and `datasets/go2/mocap_motions_go2/<run>_25hz.txt` at **25 Hz** (AMP JSON like `datasets/ai.py`). Set **`GO2_NO_DATASET=1`** to skip (legacy: `QUAD_SPIN_NO_DATASET=1`). Use **`--vis`** for MeshCat playback. Example AMP viz: `python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_25hz.txt` (add repo root to `PYTHONPATH` for `datasets.*`).
 
 After a solve, the scripts print **planning time** (IPOPT wall time) and iteration count. Trajectories may be saved under `trajopt_solutions_batch/` depending on the script.
 

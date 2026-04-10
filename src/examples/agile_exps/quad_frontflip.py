@@ -35,6 +35,10 @@ from _go2_flip_ground_clearance import (
 
 import params as pars
 
+from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
+
+_REPO_ROOT = ensure_repo_root()
+
 VIS = pars.VIS
 DT = 0.02
 
@@ -129,6 +133,15 @@ print(
     f"(IPOPT iterations: {result['iter_count']})"
 )
 opti.save_solution("quad_frontflip")
+
+export_go2_agile_trajectory(
+    _REPO_ROOT,
+    result,
+    robot.model,
+    "quad_frontflip",
+    extra_meta={"source_script": "quad_frontflip.py", "dt_nominal": DT},
+    log_prefix="quad_frontflip",
+)
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]

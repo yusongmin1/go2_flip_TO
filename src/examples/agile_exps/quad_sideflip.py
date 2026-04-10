@@ -25,6 +25,10 @@ np.set_printoptions(precision=2, suppress=False)
 
 import params as pars
 
+from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
+
+_REPO_ROOT = ensure_repo_root()
+
 VIS = pars.VIS
 DT = 0.02
 
@@ -122,6 +126,14 @@ if result.get("warning"):
 print(f"[quad_sideflip] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
 opti.save_solution("sideflip")
 
+export_go2_agile_trajectory(
+    _REPO_ROOT,
+    result,
+    robot.model,
+    "quad_sideflip",
+    extra_meta={"source_script": "quad_sideflip.py", "dt_nominal": DT},
+    log_prefix="quad_sideflip",
+)
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]

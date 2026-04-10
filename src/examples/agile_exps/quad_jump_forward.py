@@ -18,6 +18,10 @@ from visualiser.visualiser import TrajoptVisualiser
 
 import params as pars
 
+from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
+
+_REPO_ROOT = ensure_repo_root()
+
 VIS = pars.VIS
 DT = 0.02
 JUMP_FORWARD_M = 1.0
@@ -88,6 +92,20 @@ print(
     f"(IPOPT iterations: {result['iter_count']})"
 )
 opti.save_solution(f"quad_jump_forward_{_save_tag}m")
+
+_run = f"quad_jump_forward_{_save_tag}m"
+export_go2_agile_trajectory(
+    _REPO_ROOT,
+    result,
+    robot.model,
+    _run,
+    extra_meta={
+        "source_script": "quad_jump_forward.py",
+        "jump_forward_m": JUMP_FORWARD_M,
+        "dt_nominal": DT,
+    },
+    log_prefix="quad_jump_forward",
+)
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]

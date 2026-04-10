@@ -6,4 +6,5 @@ __pycache__/
 meshcat-env
 *.txt
 **trajopt_solutions**
+datasets/go2/trajectories/
 .conda/
