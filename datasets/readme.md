@@ -5,7 +5,7 @@
 任一 **`quad_*.py`** 在 **IPOPT 求解成功** 后都会通过 ``src/examples/agile_exps/_export_go2_datasets.py`` 写出：
 
 - **`datasets/go2/trajectories/<run_name>/`**：`trajectory.npz`、`meta.json`、`joints_only.csv`、`trajectory_full.csv`（**关节顺序 = URDF / Pinocchio `q` / `v`**）
-- **`datasets/go2/mocap_motions_go2/<run>_25hz.txt`**：与 **`datasets/ai.py`** 中 ``save_as_txt_with_metadata`` 相同结构的 JSON（**25 Hz**，每帧 **49 维**）；转圈脚本仍使用历史文件名 **`spin_inplace_25hz.txt`**
+- **`datasets/go2/mocap_motions_go2/<run>_25hz.txt`**：与 **`datasets/ai.py`** 中 ``save_as_txt_with_metadata`` 相同结构的 JSON（**25 Hz**，每帧 **49 维**）；原地转圈正向仍用 **`spin_inplace_25hz.txt`**，反向用 **`spin_inplace_ccw_25hz.txt`**（``quad_spin_inplace_reverse.py``）
 
 不生成数据：`GO2_NO_DATASET=1`（兼容旧变量 `QUAD_SPIN_NO_DATASET=1`）。
 
@@ -17,7 +17,7 @@
 export PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/spin_inplace_25hz.txt
 # 或播放 NPZ：
-python datasets/viz_go2_amp_trajectory.py --npz datasets/go2/trajectories/quad_spin_inplace/trajectory.npz
+python datasets/viz_go2_amp_trajectory.py --npz datasets/go2/trajectories/quad_spin_inplace_ramp_3s/trajectory.npz
 ```
 
 ---

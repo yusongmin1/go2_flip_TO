@@ -1,0 +1,19 @@
+{
+  "fps": 25.0,
+  "frame_dim": 49,
+  "layout": {
+    "q_pin_nq": 19,
+    "v_pin_nv": 18,
+    "columns_0_18": "q: base xyz, quat xyzw, joints in Pinocchio/URDF q[7:] order",
+    "columns_19_30": "foot FL,FR,RL,RR position in base frame (3 each)",
+    "columns_31_33": "base linear velocity in base frame (v[3:6])",
+    "columns_34_36": "base angular velocity in base frame (v[0:3])",
+    "columns_37_48": "joint velocities v[6:] same joint order as q[7:]"
+  },
+  "foot_frames": [
+    "FL_foot",
+    "FR_foot",
+    "RL_foot",
+    "RR_foot"
+  ]
+}

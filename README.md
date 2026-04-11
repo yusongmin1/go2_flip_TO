@@ -15,17 +15,6 @@ You can find a video summarizing the approach and results at [https://www.youtub
 
 The videos below showcase various motions that were generated using the implemented trajectory optimization solver. The code for each particular motion can be found under `src/examples/agile_exps/`.
 
-### Jump
-https://github.com/user-attachments/assets/47698c0f-a3dd-43d8-beb0-040ad7d6c012
-
-### Backflip
-https://github.com/user-attachments/assets/be5b7db3-2185-4c06-8226-fc28839872ab
-
-### Handstand
-https://github.com/user-attachments/assets/fab747f8-0eb0-4b04-819b-5b10ca46a669
-
-### Hopscotch
-https://github.com/user-attachments/assets/f579ce10-0d2a-4a95-9d9b-9fb9b3147b29
 
 ### Sideflip
 https://github.com/user-attachments/assets/31e9e250-8758-4190-8677-22f8fd361e7c
@@ -107,14 +96,21 @@ python src/examples/simple/go2_trajopt.py --vis
 ```bash
 python src/examples/agile_exps/quad_walk_forward.py --vis
 python src/examples/agile_exps/quad_walk_backward_ramp.py --vis
+python src/examples/agile_exps/quad_strafe_left_ramp.py --vis
+python src/examples/agile_exps/quad_strafe_right_ramp.py --vis
+python src/examples/agile_exps/quad_spin_inplace.py --vis
+python src/examples/agile_exps/quad_spin_inplace_reverse.py --vis
 python src/examples/agile_exps/quad_sideflip.py --vis
 python src/examples/agile_exps/quad_backflip.py --vis
 python src/examples/agile_exps/quad_frontflip.py --vis
 python src/examples/agile_exps/quad_jump_forward.py --vis
-python src/examples/agile_exps/quad_spin_inplace.py --vis
 ```
 
-All **`src/examples/agile_exps/quad_*.py`** Go2 demos export the same way after a successful solve: `datasets/go2/trajectories/<run_name>/` (NPZ/CSV) and `datasets/go2/mocap_motions_go2/<run>_25hz.txt` at **25 Hz** (AMP JSON like `datasets/ai.py`). Set **`GO2_NO_DATASET=1`** to skip (legacy: `QUAD_SPIN_NO_DATASET=1`). Use **`--vis`** for MeshCat playback. Example AMP viz: `python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_25hz.txt` (add repo root to `PYTHONPATH` for `datasets.*`).
+All **`src/examples/agile_exps/quad_*.py`** Go2 demos export the same way after a successful solve: `datasets/go2/trajectories/<run_name>/` (NPZ/CSV) and `datasets/go2/mocap_motions_go2/<run>_25hz.txt` at **25 Hz** (AMP JSON like `datasets/ai.py`). Set **`GO2_NO_DATASET=1`** to skip (legacy: `QUAD_SPIN_NO_DATASET=1`). Use **`--vis`** for MeshCat playback.
+
+**Go2 flat-ground ramps (3 s, 0→1 m/s translation or 0→1 rad/s yaw):** forward/back use **12 cm** swing clearance; **strafe** uses **8 cm** and a **pure ±y** displacement (no forward-axis motion in the task). Spin in place: **12 cm** swing. Export names include `_ramp_3s` where applicable (e.g. `quad_walk_forward_ramp_3s`).
+
+Example AMP viz: `python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_25hz.txt` (add repo root to `PYTHONPATH` for `datasets.*`).
 
 After a solve, the scripts print **planning time** (IPOPT wall time) and iteration count. Trajectories may be saved under `trajopt_solutions_batch/` depending on the script.
 

@@ -1,5 +1,11 @@
 """
 Go2 sideflip. Same ground-avoidance as other flip demos (``_go2_flip_ground_clearance``).
+
+**Takeoff / landing** (any foot in contact): **no** leg-envelope cost — 起跳过程不管.
+
+**Flight only** (``contact_phase_fnames`` empty): ``ConfigurationCost`` pulls legs toward a
+**tucked aerial reference** (hips in, thighs/calves more flexed than stand) so the airborne
+segment stays **as close to the body as the soft cost allows**. Tune weights / reference below.
 """
 import numpy as np
 import time
@@ -25,6 +31,47 @@ np.set_printoptions(precision=2, suppress=False)
 
 import params as pars
 
+# --- Flight segment only (no contacts); stronger = legs pulled harder toward tuck reference ---
+_FLIGHT_HIP_CFG_WEIGHT = 2.5e-2
+_FLIGHT_THIGH_CFG_WEIGHT = 2.0e-2
+_FLIGHT_CALF_CFG_WEIGHT = 2.0e-2
+_FLIGHT_OTHER_JOINT_WEIGHT = 8e-5
+
+
+def _air_tuck_pin_configuration(model, q_stand_pin: np.ndarray) -> np.ndarray:
+    """Pin ``q`` with legs more tucked under body than ``go_neutral`` (for aerial reference only)."""
+    q = np.array(q_stand_pin, dtype=np.float64).copy()
+    for jn in ("FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        q[iq] = 0.0
+    for jn in ("FL_thigh_joint", "FR_thigh_joint", "RL_thigh_joint", "RR_thigh_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        q[iq] = 1.22
+    for jn in ("FL_calf_joint", "FR_calf_joint", "RL_calf_joint", "RR_calf_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        q[iq] = -2.28
+    return q
+
+
+def _flight_leg_tuck_configuration_cost(model, q_tuck_pin: np.ndarray) -> ConfigurationCost:
+    """Soft pull of leg joints toward tucked aerial pose during flight only."""
+    q_ref = reprutils.pin2rep(q_tuck_pin)
+    nj = model.nv - 6
+    W = np.eye(nj) * _FLIGHT_OTHER_JOINT_WEIGHT
+    for jn in ("FL_hip_joint", "FR_hip_joint", "RL_hip_joint", "RR_hip_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        jtan = iq - 7
+        W[jtan, jtan] = _FLIGHT_HIP_CFG_WEIGHT
+    for jn in ("FL_thigh_joint", "FR_thigh_joint", "RL_thigh_joint", "RR_thigh_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        jtan = iq - 7
+        W[jtan, jtan] = _FLIGHT_THIGH_CFG_WEIGHT
+    for jn in ("FL_calf_joint", "FR_calf_joint", "RL_calf_joint", "RR_calf_joint"):
+        iq = model.joints[model.getJointId(jn)].idx_q
+        jtan = iq - 7
+        W[jtan, jtan] = _FLIGHT_CALF_CFG_WEIGHT
+    return ConfigurationCost(q_ref[6:], W)
+
 from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
 
 _REPO_ROOT = ensure_repo_root()
@@ -36,6 +83,7 @@ terrain_body_clearance = terrain_body_clearance_dict()
 
 robot = Go2()
 q = robot.go_neutral()
+q_air_tuck = _air_tuck_pin_configuration(robot.model, q)
 
 terrain = TerrainGrid(10, 10, 0.9, -1.0, -5.0, 5.0, 5.0)
 terrain.set_zero()
@@ -93,9 +141,8 @@ for k, contact_phase_fnames in enumerate(frame_contact_seq):
         ]
     )
 
-    # stage_node.costs_list.extend([ConfigurationCost(q.copy()[7:], np.eye(robot.model.nq - 7) * 1e-9)])
-    # stage_node.costs_list.extend([JointVelocityCost(np.zeros((robot.model.nv - 6,)), np.eye(robot.model.nv - 6) * 1e-3)])
-    # stage_node.costs_list.extend([JointAccelerationCost(np.zeros((robot.model.nv - 6,)), np.eye(robot.model.nv - 6) * 1e-6)])
+    if len(contact_phase_fnames) == 0:
+        stage_node.costs_list.append(_flight_leg_tuck_configuration_cost(robot.model, q_air_tuck))
 
     stages.append(stage_node)
 

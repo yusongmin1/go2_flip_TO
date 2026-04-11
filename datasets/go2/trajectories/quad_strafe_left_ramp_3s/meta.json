@@ -1,0 +1,72 @@
+{
+  "robot_model_name": "go2_description",
+  "nq": 19,
+  "nv": 18,
+  "actuated_joint_names": [
+    "FL_hip_joint",
+    "FL_thigh_joint",
+    "FL_calf_joint",
+    "FR_hip_joint",
+    "FR_thigh_joint",
+    "FR_calf_joint",
+    "RL_hip_joint",
+    "RL_thigh_joint",
+    "RL_calf_joint",
+    "RR_hip_joint",
+    "RR_thigh_joint",
+    "RR_calf_joint"
+  ],
+  "actuated_q_indices": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18
+  ],
+  "q_pinocchio_layout": {
+    "note": "Same order as Pinocchio model built from URDF (floating base + joints).",
+    "translation_world_xyz": [
+      0,
+      1,
+      2
+    ],
+    "quaternion_joint_frame_xyzw": [
+      3,
+      4,
+      5,
+      6
+    ],
+    "actuated_urdf_joint_order": [
+      "FL_hip_joint",
+      "FL_thigh_joint",
+      "FL_calf_joint",
+      "FR_hip_joint",
+      "FR_thigh_joint",
+      "FR_calf_joint",
+      "RL_hip_joint",
+      "RL_thigh_joint",
+      "RL_calf_joint",
+      "RR_hip_joint",
+      "RR_thigh_joint",
+      "RR_calf_joint"
+    ]
+  },
+  "v_pinocchio_layout": {
+    "note": "Generalized velocity v aligned with model.nv (6-d base + joint rates)."
+  },
+  "run_name": "quad_strafe_left_ramp_3s",
+  "source_script": "quad_strafe_left_ramp.py",
+  "axis": 1,
+  "direction": 1.0,
+  "horizon_s": 3.0,
+  "v_max_m_s": 1.0,
+  "swing_clearance_m": 0.12,
+  "dt_nominal": 0.05
+}
