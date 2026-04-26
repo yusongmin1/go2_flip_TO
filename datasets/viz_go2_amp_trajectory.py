@@ -1,6 +1,12 @@
 """
-Visualize Go2 trajectories from ``trajectory.npz`` (quad_spin export) or AMP JSON txt
+Visualize Go2 trajectories from ``trajectory.npz`` (solver export) or mocap JSON txt
 (``save_as_txt_with_metadata`` / ``go2_amp_export``).
+
+Supports **50 Hz** Isaac-style flat ``Frames`` (default agile export: **49-D** = 37 + four
+``(p_\text{foot}-p_\text{base})_w`` triples)
+and legacy **49-D** AMP49 rows (first 19 columns are full ``q``);
+see ``datasets/go2_amp_export.py``. Run from repo root with
+``PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"`` (root prefix required for ``import datasets``).
 
 Uses MeshCat + URDF under ``src/nltrajopt/robots/go2`` — loads with ``buildModelsFromUrdf`` like
 ``Go2Wrapper`` (URDF already has a floating base; **do not** add a second ``JointModelFreeFlyer``).
@@ -45,18 +51,69 @@ def _qs_from_npz(path: Path) -> tuple:
     return Q, dts
 
 
+def _load_amp_sidecar_meta(path: Path) -> dict:
+    meta_path = path.with_suffix(".meta.json")
+    if not meta_path.is_file():
+        return {}
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def _qs_from_amp_json(path: Path) -> tuple:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     fps = 1.0 / float(data["FrameDuration"])
     frames = np.asarray(data["Frames"], dtype=np.float64)
     n_col = frames.shape[1]
-    if n_col < 19:
-        raise ValueError(f"Frames need at least 19 columns (full q), got {n_col}")
-    Q = frames[:, :19]
     dt = 1.0 / fps
-    dts = np.full(Q.shape[0], dt, dtype=np.float64)
-    return Q, dts
+    meta = _load_amp_sidecar_meta(path)
+    fmt = meta.get("format")
+    foot_names = (
+        meta.get("foot_frame_names")
+        or meta.get("foot_world_frame_names")
+        or meta.get("key_body_frame_names")
+    )
+
+    def _from_go2_isaac_motion() -> tuple:
+        pos = frames[:, :3]
+        quat = frames[:, 3:7]
+        # Legacy ``frame_layout: sideflip`` mocap: dof/key/twist blocks were permuted; default is below.
+        if meta.get("frame_layout") == "sideflip":
+            dof = frames[:, 7:19]
+        else:
+            dof = frames[:, 13:25]
+        Q = np.hstack([pos, quat, dof])
+        n = np.linalg.norm(Q[:, 3:7], axis=1, keepdims=True)
+        Q[:, 3:7] /= np.maximum(n, 1e-12)
+        dts = np.full(Q.shape[0], dt, dtype=np.float64)
+        return Q, dts
+
+    # 49 columns: either legacy AMP49 (q + feet_b + twist + qdot) or Go2 Isaac (37 + 4 feet × 3).
+    if n_col == 49:
+        _tail = meta.get("tail_kind")
+        isaac49 = (
+            fmt == "go2_isaac_motion"
+            or _tail in ("foot_relative_base_world", "foot_translation_world")
+            or (
+                isinstance(foot_names, list)
+                and len(foot_names) == 4
+                and int(meta.get("frame_dim", 0)) == 49
+            )
+        )
+        if isaac49:
+            return _from_go2_isaac_motion()
+        # Legacy 49-D: full Pinocchio q in first 19 columns.
+        Q = frames[:, :19]
+        dts = np.full(Q.shape[0], dt, dtype=np.float64)
+        return Q, dts
+
+    # Isaac-style (agile export): pos(3)+quat(4)+lin_b(3)+ang_b(3)+dof_pos(12)+dof_vel(12)+keys…
+    if n_col >= 37 and (n_col - 37) % 3 == 0:
+        return _from_go2_isaac_motion()
+    raise ValueError(f"Unsupported Frames width {n_col} (expected 49 legacy or 37+3K Isaac export)")
 
 
 def _foot_markers(viz: MeshcatVisualizer, model: pin.Model, data: pin.Data, q: np.ndarray) -> None:
@@ -75,8 +132,13 @@ def _foot_markers(viz: MeshcatVisualizer, model: pin.Model, data: pin.Data, q: n
 
 def main():
     p = argparse.ArgumentParser(description="Play back Go2 trajectory in MeshCat")
-    p.add_argument("--npz", type=str, default=None, help="trajectory.npz from quad_spin export")
-    p.add_argument("--amp", type=str, default=None, help="AMP JSON txt from go2_amp_export")
+    p.add_argument("--npz", type=str, default=None, help="trajectory.npz under datasets/go2/trajectories/<run>/")
+    p.add_argument(
+        "--amp",
+        type=str,
+        default=None,
+        help="Mocap JSON txt (50 Hz Isaac-style default, or legacy 49-D *_25hz.txt)",
+    )
     p.add_argument("--urdf", type=str, default=str(_DEFAULT_URDF))
     p.add_argument("--package-dir", type=str, default=str(_DEFAULT_PKG))
     p.add_argument("--loop", action="store_true", help="Repeat playback")

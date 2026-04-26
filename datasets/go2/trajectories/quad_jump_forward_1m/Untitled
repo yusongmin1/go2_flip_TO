@@ -1,0 +1,1 @@
+python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_jump_forward_1m_50hz.txt

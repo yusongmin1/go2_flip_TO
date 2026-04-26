@@ -1,7 +1,11 @@
+"""
+Go2 whole-body example on flat ``TerrainGrid``: multi-phase contacts (feet + gripper frames).
+After a solve, exports NPZ / CSV / **50 Hz** Isaac mocap like other ``agile_exps`` (see
+``_export_go2_datasets.export_go2_agile_trajectory``).
+"""
 import time
 
 import numpy as np
-import pinocchio as pin
 
 from trajectory_optimization import NLTrajOpt
 from contact_scheduler import ContactScheduler
@@ -14,7 +18,13 @@ from robots.go2.Go2Wrapper import Go2
 
 from visualiser.visualiser import TrajoptVisualiser
 
-VIS = True
+import params as pars
+
+from _export_go2_datasets import ensure_repo_root, export_go2_agile_trajectory
+
+_REPO_ROOT = ensure_repo_root()
+
+VIS = pars.VIS
 DT = 0.05
 
 terrain = TerrainGrid(10, 10, 0.9, -1.0, -5.0, 5.0, 5.0)
@@ -80,18 +90,33 @@ qf[2] += terrain.height(qf[0], qf[1])
 opti.set_target_pose(qf)
 
 result = opti.solve(500, 1e-3)
-print(f"[go2_trajopt] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
+if result.get("warning"):
+    print(f"[go2_trajopt] WARNING: {result['warning']}")
+print(
+    f"[go2_trajopt] Planning time: {result['solve_time']:.4f} s "
+    f"(IPOPT iterations: {result['iter_count']})"
+)
+opti.save_solution("go2_trajopt")
+
+export_go2_agile_trajectory(
+    _REPO_ROOT,
+    result,
+    robot.model,
+    "go2_trajopt",
+    extra_meta={"source_script": "go2_trajopt.py", "dt_nominal": DT},
+    log_prefix="go2_trajopt",
+)
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]
-state_trajectory = [result["nodes"][k]["q"] for k in range(K)]
+qs = [result["nodes"][k]["q"] for k in range(K)]
 forces = [result["nodes"][k]["forces"] for k in range(K)]
 
 if VIS:
     tvis = TrajoptVisualiser(robot)
 
-    interp_states = state_trajectory
-    tvis.display_robot_q(robot, state_trajectory[0])
+    interp_states = qs
+    tvis.display_robot_q(robot, qs[0])
 
     # Visualise the terrain
     tvis.load_terrain(terrain)

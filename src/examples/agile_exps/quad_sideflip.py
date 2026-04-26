@@ -8,6 +8,7 @@ Go2 sideflip. Same ground-avoidance as other flip demos (``_go2_flip_ground_clea
 segment stays **as close to the body as the soft cost allows**. Tune weights / reference below.
 """
 import numpy as np
+import pinocchio as pin
 import time
 
 from trajectory_optimization import NLTrajOpt
@@ -185,7 +186,34 @@ export_go2_agile_trajectory(
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]
 qs = [result["nodes"][k]["q"] for k in range(K)]
+vs = [np.asarray(result["nodes"][k]["v"], dtype=np.float64).ravel() for k in range(K)]
 forces = [result["nodes"][k]["forces"] for k in range(K)]
+
+# Go2 ``JointModelFreeFlyer``: v[0:3] = 机体系**线速度** (m/s), v[3:6] = 机体系**角速度** (rad/s)。
+# 以前若误把 v[:3] 当角速度再乘 R，会把线速度当角速度转到世界系，列幅值会完全不对（例如第三列虚高）。
+omega_b = np.stack([v[3:6] for v in vs], axis=0)
+omega_w = np.stack(
+    [
+        pin.Quaternion(np.asarray(q, dtype=np.float64).ravel()[3:7]).toRotationMatrix() @ v[3:6]
+        for q, v in zip(qs, vs)
+    ],
+    axis=0,
+)
+err = np.abs(np.linalg.norm(omega_b, axis=1) - np.linalg.norm(omega_w, axis=1)).max()
+print(
+    f"[quad_sideflip] ‖ω_b‖_max={np.linalg.norm(omega_b, axis=1).max():.4f}  "
+    f"‖ω_w‖_max={np.linalg.norm(omega_w, axis=1).max():.4f} rad/s  "
+    f"(‖ω‖_b vs ‖ω‖_w max diff {err:.2e})"
+)
+print(f"[quad_sideflip] 基座角速度 ω_b（机体系, rad/s）, {K} 个节点:")
+with np.printoptions(precision=4, suppress=True, linewidth=100):
+    print(omega_b)
+print(
+    "[quad_sideflip] 基座角速度 ω_w（世界系, rad/s）。"
+    "若为**纯**绕世界 x 转，理想上有 |ω_y|,|ω_z|≪|ω_x|；本优化解未必接近该理想，以列为据。"
+)
+with np.printoptions(precision=4, suppress=True, linewidth=100):
+    print(omega_w)
 
 if VIS:
     tvis = TrajoptVisualiser(robot)

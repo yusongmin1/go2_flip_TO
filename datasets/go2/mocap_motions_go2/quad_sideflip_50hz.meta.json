@@ -1,0 +1,22 @@
+{
+  "format": "go2_isaac_motion",
+  "fps": 50.0,
+  "frame_dim": 49,
+  "frame_layout": "default",
+  "tail_kind": "foot_relative_base_world",
+  "foot_frame_names": [
+    "FL_foot",
+    "FR_foot",
+    "RL_foot",
+    "RR_foot"
+  ],
+  "layout": {
+    "columns_0_2": "root position world (m)",
+    "columns_3_6": "root quaternion xyzw world",
+    "columns_7_9": "root linear velocity base/body frame (m/s)",
+    "columns_10_12": "root angular velocity base/body frame (rad/s)",
+    "columns_13_24": "dof_pos (12), URDF / Pinocchio q[7:] order",
+    "columns_25_36": "dof_vel (12), Pinocchio v[6:] order",
+    "columns_37_48": "key_body (p_foot - p_base) world (m), xyz × 4, order = foot_frame_names"
+  }
+}

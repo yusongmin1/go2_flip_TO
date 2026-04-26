@@ -59,9 +59,11 @@
     ]
   },
   "v_pinocchio_layout": {
-    "note": "Generalized velocity v aligned with model.nv (6-d base + joint rates)."
+    "note": "Generalized velocity v aligned with model.nv (6-d base + joint rates).",
+    "floating_base_v0_5_go2": "v[0:3] base linear vel in base frame (m/s); v[3:6] base angular vel in base frame (rad/s); v[6:] joint rates."
   },
   "run_name": "quad_sideflip",
   "source_script": "quad_sideflip.py",
-  "dt_nominal": 0.02
+  "dt_nominal": 0.02,
+  "base_z_offset_applied_m": 0.022
 }

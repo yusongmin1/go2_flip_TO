@@ -111,6 +111,7 @@ def save_go2_pin_trajectory_dataset(
         },
         "v_pinocchio_layout": {
             "note": "Generalized velocity v aligned with model.nv (6-d base + joint rates).",
+            "floating_base_v0_5_go2": "v[0:3] base linear vel in base frame (m/s); v[3:6] base angular vel in base frame (rad/s); v[6:] joint rates.",
         },
     }
     if extra_meta:
