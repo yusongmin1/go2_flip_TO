@@ -168,6 +168,7 @@ This work was conducted within the [Laboratory of Automation and Robotics](https
 
 <p align="center">
 <img src="http://lar.ece.upatras.gr/wp-content/uploads/sites/147/2022/10/lar_profile_alpha.png" alt="logo_lar" width="20%"/><br/>
-<img src="https://www.upatras.gr/wp-content/uploads/up_2017_logo_en.png" alt="logo_upatras" width="50%"/>
+<img src="https://www.upatras.gr/wp-content/uploads/up_2017_logo_en.png" alt="logo_upatras" width="50%"/><br/>
+<a href="https://www.hrbeu.edu.cn/" title="哈尔滨工程大学"><img src="images/heu_logo.png" alt="logo_heu" width="380"/></a>
 </p>
 
