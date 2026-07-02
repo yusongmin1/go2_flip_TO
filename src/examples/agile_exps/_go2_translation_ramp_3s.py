@@ -29,7 +29,6 @@ def run_translation_ramp_3s(
     axis: int,
     direction: float,
     *,
-    save_solution_basename: str,
     export_run_name: str,
     log_prefix: str,
     motion_label: str,
@@ -130,7 +129,6 @@ def run_translation_ramp_3s(
         f"[{log_prefix}] Planning time: {result['solve_time']:.4f} s "
         f"(IPOPT iterations: {result['iter_count']})"
     )
-    opti.save_solution(save_solution_basename)
 
     K = len(result["nodes"])
     dts = [result["nodes"][k]["dt"] for k in range(K)]

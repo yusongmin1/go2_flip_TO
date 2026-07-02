@@ -91,7 +91,6 @@ print(
     f"[quad_jump_forward {JUMP_FORWARD_M:g} m] Planning time: {result['solve_time']:.4f} s "
     f"(IPOPT iterations: {result['iter_count']})"
 )
-opti.save_solution(f"quad_jump_forward_{_save_tag}m")
 
 _run = f"quad_jump_forward_{_save_tag}m"
 export_go2_agile_trajectory(

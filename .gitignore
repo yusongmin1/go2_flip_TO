@@ -5,5 +5,5 @@ __pycache__/
 *.pyc
 meshcat-env
 **trajopt_solutions**
+trajopt_solutions_batch/
 .conda/
-.trajopt_solutions_batch/

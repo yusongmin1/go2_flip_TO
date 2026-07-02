@@ -172,7 +172,6 @@ result = opti.solve(
 if result.get("warning"):
     print(f"[quad_sideflip] WARNING: {result['warning']}")
 print(f"[quad_sideflip] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
-opti.save_solution("sideflip")
 
 export_go2_agile_trajectory(
     _REPO_ROOT,

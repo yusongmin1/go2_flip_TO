@@ -1,187 +1,346 @@
 """
-Visualize Go2 trajectories from ``trajectory.npz`` (solver export) or mocap JSON txt
-(``save_as_txt_with_metadata`` / ``go2_amp_export``).
+Play back Go2 mocap JSON txt (``go2_amp_export.export_go2_isaac_motion_txt``) in MuJoCo.
 
-Supports **50 Hz** Isaac-style flat ``Frames`` (default agile export: **49-D** = 37 + four
-``(p_\text{foot}-p_\text{base})_w`` triples)
-and legacy **49-D** AMP49 rows (first 19 columns are full ``q``);
-see ``datasets/go2_amp_export.py``. Run from repo root with
-``PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"`` (root prefix required for ``import datasets``).
+Each **43-D** row: ``root_pos(3)``, ``root_rot`` xyzw ``(4)``, ``dof_pos(12)``,
+four feet in base frame ``(12)``, ``dof_vel(12)``. Rendering uses ``root_pos`` /
+``root_rot`` / ``dof_pos`` only.
 
-Uses MeshCat + URDF under ``src/nltrajopt/robots/go2`` — loads with ``buildModelsFromUrdf`` like
-``Go2Wrapper`` (URDF already has a floating base; **do not** add a second ``JointModelFreeFlyer``).
+Run from repo root::
+
+    export PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"
+    python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_50hz.txt
+    # default: loop until you close the window; --no-loop to play once
+
+If the interactive viewer segfaults (GLX / GPU driver), try::
+
+    export MUJOCO_GL=egl
+    python datasets/viz_go2_amp_trajectory.py --amp ... --video out.mp4
+
+默认加载 **`datasets/go2/go2/scene.xml`**（含 `go2.xml` 的 OBJ 网格、地面、天空盒），不再用 Pinocchio URDF（URDF 在 MuJoCo 里往往只剩碰撞盒、且无天空/地面）。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
+from typing import Any, Tuple
 
 import numpy as np
-import pinocchio as pin
-from pinocchio.visualize import MeshcatVisualizer
-
-try:
-    import meshcat.geometry as g
-    import meshcat.transformations as tf
-except ImportError as e:
-    raise SystemExit("meshcat is required: conda install -c conda-forge meshcat-python") from e
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_DEFAULT_SCENE = _REPO_ROOT / "datasets" / "go2" / "go2" / "scene.xml"
+_DEFAULT_MODEL_DIR = _DEFAULT_SCENE.parent
+# Legacy URDF (collision boxes only if mesh fails to load):
 _DEFAULT_URDF = _REPO_ROOT / "src" / "nltrajopt" / "robots" / "go2" / "go2" / "urdf" / "go2.urdf"
 _DEFAULT_PKG = _REPO_ROOT / "src" / "nltrajopt" / "robots" / "go2" / "go2"
 
-FOOT_FRAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
+# go2.xml: visual geoms group 2, collision group 3; scene floor/sky in group 0.
+ROBOT_VISUAL_GEOM_GROUP = 2
+ROBOT_COLLISION_GEOM_GROUP = 3
+ROBOT_BASE_BODY = "base_link"
+
+GO2_DOF_JOINT_NAMES = (
+    "FL_hip_joint",
+    "FL_thigh_joint",
+    "FL_calf_joint",
+    "FR_hip_joint",
+    "FR_thigh_joint",
+    "FR_calf_joint",
+    "RL_hip_joint",
+    "RL_thigh_joint",
+    "RL_calf_joint",
+    "RR_hip_joint",
+    "RR_thigh_joint",
+    "RR_calf_joint",
+)
 
 
-def _load_robot(urdf_path: Path, package_dir: Path):
-    """Match ``robots/go2/Go2Wrapper.py``: one floating base from URDF only → ``nq=19``."""
-    return pin.buildModelsFromUrdf(
-        str(urdf_path),
-        package_dirs=[str(package_dir)],
-    )
-
-
-def _qs_from_npz(path: Path) -> tuple:
-    z = np.load(path, allow_pickle=True)
-    Q = np.asarray(z["q"], dtype=np.float64)
-    dts = np.asarray(z["dt"], dtype=np.float64).ravel()
-    return Q, dts
-
-
-def _load_amp_sidecar_meta(path: Path) -> dict:
-    meta_path = path.with_suffix(".meta.json")
-    if not meta_path.is_file():
-        return {}
+def _import_mujoco():
     try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
+        import mujoco
+        import mujoco.viewer
+    except ImportError as e:
+        raise SystemExit(
+            "mujoco is required: pip install mujoco  (or conda install -c conda-forge mujoco)"
+        ) from e
+    return mujoco, mujoco.viewer
 
 
-def _qs_from_amp_json(path: Path) -> tuple:
+def _load_mujoco_model(mujoco: Any, model_path: Path, model_dir: Path | None = None):
+    """Load MJCF/URDF; relative mesh paths resolve from ``model_dir`` (or the XML parent)."""
+    model_path = model_path.resolve()
+    base = (model_dir if model_dir is not None else model_path.parent).resolve()
+    cwd = os.getcwd()
+    try:
+        os.chdir(base)
+        return mujoco.MjModel.from_xml_path(str(model_path))
+    finally:
+        os.chdir(cwd)
+
+
+def _make_scene_option(mujoco: Any, show_collision: bool = False):
+    """Show MJCF visual meshes + scene; hide robot collision unless ``show_collision``."""
+    opt = mujoco.MjvOption()
+    opt.geomgroup[:] = 0
+    opt.geomgroup[0] = 1  # floor, sky-linked geoms, scene props
+    opt.geomgroup[ROBOT_VISUAL_GEOM_GROUP] = 1
+    if show_collision:
+        opt.geomgroup[ROBOT_COLLISION_GEOM_GROUP] = 1
+    return opt
+
+
+def _load_frames_from_txt(path: Path) -> tuple[np.ndarray, float]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     fps = 1.0 / float(data["FrameDuration"])
     frames = np.asarray(data["Frames"], dtype=np.float64)
+    if frames.ndim != 2:
+        raise ValueError(f"Frames must be 2-D, got shape {frames.shape}")
     n_col = frames.shape[1]
-    dt = 1.0 / fps
-    meta = _load_amp_sidecar_meta(path)
-    fmt = meta.get("format")
-    foot_names = (
-        meta.get("foot_frame_names")
-        or meta.get("foot_world_frame_names")
-        or meta.get("key_body_frame_names")
-    )
-
-    def _from_go2_isaac_motion() -> tuple:
-        pos = frames[:, :3]
-        quat = frames[:, 3:7]
-        # Legacy ``frame_layout: sideflip`` mocap: dof/key/twist blocks were permuted; default is below.
-        if meta.get("frame_layout") == "sideflip":
-            dof = frames[:, 7:19]
-        else:
-            dof = frames[:, 13:25]
-        Q = np.hstack([pos, quat, dof])
-        n = np.linalg.norm(Q[:, 3:7], axis=1, keepdims=True)
-        Q[:, 3:7] /= np.maximum(n, 1e-12)
-        dts = np.full(Q.shape[0], dt, dtype=np.float64)
-        return Q, dts
-
-    # 49 columns: either legacy AMP49 (q + feet_b + twist + qdot) or Go2 Isaac (37 + 4 feet × 3).
+    if n_col == 43:
+        return frames, fps
     if n_col == 49:
-        _tail = meta.get("tail_kind")
-        isaac49 = (
-            fmt == "go2_isaac_motion"
-            or _tail in ("foot_relative_base_world", "foot_translation_world")
-            or (
-                isinstance(foot_names, list)
-                and len(foot_names) == 4
-                and int(meta.get("frame_dim", 0)) == 49
-            )
+        out = np.hstack(
+            [
+                frames[:, :7],
+                frames[:, 13:25],
+                frames[:, 37:49],
+                frames[:, 25:37],
+            ]
         )
-        if isaac49:
-            return _from_go2_isaac_motion()
-        # Legacy 49-D: full Pinocchio q in first 19 columns.
-        Q = frames[:, :19]
-        dts = np.full(Q.shape[0], dt, dtype=np.float64)
-        return Q, dts
-
-    # Isaac-style (agile export): pos(3)+quat(4)+lin_b(3)+ang_b(3)+dof_pos(12)+dof_vel(12)+keys…
-    if n_col >= 37 and (n_col - 37) % 3 == 0:
-        return _from_go2_isaac_motion()
-    raise ValueError(f"Unsupported Frames width {n_col} (expected 49 legacy or 37+3K Isaac export)")
+        return out, fps
+    if n_col >= 19 and n_col < 43:
+        padded = np.zeros((frames.shape[0], 43), dtype=np.float64)
+        padded[:, :19] = frames[:, :19]
+        return padded, fps
+    raise ValueError(f"Unsupported frame width {n_col} (expected 43)")
 
 
-def _foot_markers(viz: MeshcatVisualizer, model: pin.Model, data: pin.Data, q: np.ndarray) -> None:
-    pin.forwardKinematics(model, data, q)
-    pin.updateFramePlacements(model, data)
-    radius = 0.02
-    sphere = g.Sphere(radius)
-    mat = g.MeshLambertMaterial(color=0xFF0000)
-    for idx, name in enumerate(FOOT_FRAMES):
-        fid = model.getFrameId(name)
-        p = data.oMf[fid].translation
-        node = f"/foot_marker_{idx}"
-        viz.viewer[node].set_object(sphere, mat)
-        viz.viewer[node].set_transform(tf.translation_matrix(p))
+def _frame_to_qpos(frame: np.ndarray) -> np.ndarray:
+    frame = np.asarray(frame, dtype=np.float64).ravel()
+    if frame.shape[0] < 19:
+        raise ValueError(f"Need at least 19 values for root+dof, got {frame.shape[0]}")
+    qx, qy, qz, qw = frame[3:7]
+    qpos = np.zeros(19, dtype=np.float64)
+    qpos[0:3] = frame[0:3]
+    qpos[3:7] = np.array([qw, qx, qy, qz], dtype=np.float64)
+    qpos[7:19] = frame[7:19]
+    n = np.linalg.norm(qpos[3:7])
+    if n > 1e-12:
+        qpos[3:7] /= n
+    return qpos
 
 
-def main():
-    p = argparse.ArgumentParser(description="Play back Go2 trajectory in MeshCat")
-    p.add_argument("--npz", type=str, default=None, help="trajectory.npz under datasets/go2/trajectories/<run>/")
+def _check_joint_order(mujoco: Any, model) -> None:
+    for i, name in enumerate(GO2_DOF_JOINT_NAMES):
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
+        if jid < 0:
+            raise SystemExit(f"Joint {name!r} not found in MuJoCo model")
+        adr = int(model.jnt_qposadr[jid])
+        if adr != 7 + i:
+            raise SystemExit(
+                f"Joint {name!r} qposadr={adr}, expected {7 + i}; "
+                "dof_pos column order may not match this URDF."
+            )
+
+
+def _apply_frame(mujoco: Any, model, data, frame: np.ndarray) -> None:
+    data.qpos[:] = _frame_to_qpos(frame)
+    mujoco.mj_forward(model, data)
+
+
+def _setup_camera(mujoco: Any, model, data, viewer_cam) -> None:
+    mujoco.mj_forward(model, data)
+    base_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, ROBOT_BASE_BODY)
+    if base_bid < 0:
+        base_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "base")
+    if base_bid >= 0:
+        viewer_cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+        viewer_cam.trackbodyid = base_bid
+        viewer_cam.lookat[:] = data.xpos[base_bid]
+    else:
+        viewer_cam.lookat[:] = data.subtree_com[0]
+    viewer_cam.distance = 2.5
+    viewer_cam.elevation = -15.0
+    viewer_cam.azimuth = 90.0
+
+
+def _export_video(
+    mujoco: Any,
+    model,
+    frames: np.ndarray,
+    fps: float,
+    output_path: Path,
+    width: int,
+    height: int,
+    show_collision: bool,
+) -> None:
+    try:
+        import imageio.v2 as imageio
+    except ImportError as e:
+        raise SystemExit("Video export needs imageio: pip install imageio imageio-ffmpeg") from e
+
+    data = mujoco.MjData(model)
+    _apply_frame(mujoco, model, data, frames[0])
+    model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), width)
+    model.vis.global_.offheight = max(int(model.vis.global_.offheight), height)
+    scene_option = _make_scene_option(mujoco, show_collision=show_collision)
+    renderer = mujoco.Renderer(model, height=height, width=width)
+    try:
+        pixels = []
+        for i in range(frames.shape[0]):
+            _apply_frame(mujoco, model, data, frames[i])
+            renderer.update_scene(data, scene_option=scene_option)
+            pixels.append(renderer.render())
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        imageio.mimsave(str(output_path), pixels, fps=fps)
+    finally:
+        renderer.close()
+    print(f"Saved video ({frames.shape[0]} frames @ {fps:g} Hz) -> {output_path}")
+
+
+def _play_interactive(
+    mujoco: Any,
+    mujoco_viewer: Any,
+    model,
+    frames: np.ndarray,
+    dt: float,
+    loop: bool,
+    show_collision: bool,
+) -> None:
+    data = mujoco.MjData(model)
+    _apply_frame(mujoco, model, data, frames[0])
+
+    with mujoco_viewer.launch_passive(
+        model,
+        data,
+        show_left_ui=False,
+        show_right_ui=False,
+    ) as viewer:
+        viewer.opt.geomgroup[:] = _make_scene_option(mujoco, show_collision).geomgroup
+        _setup_camera(mujoco, model, data, viewer.cam)
+        idx = 0
+        n = frames.shape[0]
+        while viewer.is_running():
+            _apply_frame(mujoco, model, data, frames[idx])
+            viewer.sync()
+            time.sleep(dt)
+            idx += 1
+            if idx >= n:
+                if loop:
+                    idx = 0
+                else:
+                    while viewer.is_running():
+                        viewer.sync()
+                        time.sleep(0.05)
+                    break
+
+
+def _configure_gl(gl_backend: str | None, video_path: Path | None) -> None:
+    if gl_backend:
+        os.environ["MUJOCO_GL"] = gl_backend
+    elif video_path is not None and "MUJOCO_GL" not in os.environ:
+        os.environ["MUJOCO_GL"] = "egl"
+    elif "DISPLAY" not in os.environ and "MUJOCO_GL" not in os.environ:
+        os.environ["MUJOCO_GL"] = "egl"
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description="Play back Go2 mocap txt in MuJoCo")
     p.add_argument(
         "--amp",
         type=str,
-        default=None,
-        help="Mocap JSON txt (50 Hz Isaac-style default, or legacy 49-D *_25hz.txt)",
+        required=True,
+        help="Mocap JSON txt, e.g. datasets/go2/mocap_motions_go2/quad_backflip_50hz.txt",
     )
-    p.add_argument("--urdf", type=str, default=str(_DEFAULT_URDF))
+    p.add_argument(
+        "--model",
+        type=str,
+        default=str(_DEFAULT_SCENE),
+        help="MuJoCo scene XML (default: datasets/go2/go2/scene.xml with mesh + ground + sky)",
+    )
+    p.add_argument(
+        "--model-dir",
+        type=str,
+        default=str(_DEFAULT_MODEL_DIR),
+        help="Directory for resolving relative mesh paths in the MJCF",
+    )
+    p.add_argument(
+        "--urdf",
+        type=str,
+        default=None,
+        help="(deprecated) same as --model; use --model instead",
+    )
     p.add_argument("--package-dir", type=str, default=str(_DEFAULT_PKG))
-    p.add_argument("--loop", action="store_true", help="Repeat playback")
+    p.add_argument(
+        "--show-collision",
+        action="store_true",
+        help="Also draw robot collision geoms (group 3); default is visual mesh only",
+    )
+    p.add_argument(
+        "--no-loop",
+        action="store_true",
+        help="Play once then hold last frame (default: loop until window is closed)",
+    )
+    p.add_argument(
+        "--video",
+        type=str,
+        default=None,
+        help="Export MP4 instead of opening a window (uses offscreen render; sets MUJOCO_GL=egl)",
+    )
+    p.add_argument(
+        "--gl",
+        type=str,
+        default=None,
+        choices=("glfw", "egl", "osmesa"),
+        help="MuJoCo GL backend (default glfw for viewer; egl for --video)",
+    )
+    p.add_argument("--width", type=int, default=1280)
+    p.add_argument("--height", type=int, default=720)
     args = p.parse_args()
 
-    if bool(args.npz) == bool(args.amp):
-        p.error("Provide exactly one of --npz or --amp")
+    video_path = Path(args.video) if args.video else None
+    _configure_gl(args.gl, video_path)
 
-    if args.npz:
-        Q, dts = _qs_from_npz(Path(args.npz))
-    else:
-        Q, dts = _qs_from_amp_json(Path(args.amp))
+    mujoco, mujoco_viewer = _import_mujoco()
 
-    model, cmod, vmod = _load_robot(Path(args.urdf), Path(args.package_dir))
-    if Q.shape[1] != model.nq:
-        raise SystemExit(f"q columns {Q.shape[1]} != model.nq {model.nq}")
+    model_path = Path(args.urdf if args.urdf else args.model)
+    model_dir = Path(args.package_dir if args.urdf else args.model_dir)
 
-    viz = MeshcatVisualizer(model, cmod, vmod)
-    viz.initViewer(open=True)
-    viz.loadViewerModel(rootNodeName="go2")
-    ground = g.Box([10.0, 10.0, 0.1])
-    viz.viewer["/Ground"].set_object(ground)
-    viz.viewer["/Ground"].set_transform(tf.translation_matrix([0, 0, -0.05]))
+    txt_path = Path(args.amp)
+    frames, fps = _load_frames_from_txt(txt_path)
+    dt = 1.0 / fps
 
-    data = model.createData()
+    model = _load_mujoco_model(mujoco, model_path, model_dir)
+    if model.nq != 19:
+        raise SystemExit(f"Expected Go2 nq=19, got {model.nq}")
+    _check_joint_order(mujoco, model)
+
+    print(f"Playing {frames.shape[0]} frames @ {fps:g} Hz from {txt_path}")
+    loop = not args.no_loop
+    if loop:
+        print("Loop: on (close window to exit; use --no-loop to play once)")
+
+    if video_path is not None:
+        _export_video(
+            mujoco, model, frames, fps, video_path, args.width, args.height, args.show_collision
+        )
+        return
+
     try:
-        viz.viewer["go2/trunk_0"].set_property("color", [0.7, 0.7, 0.7, 1.0])
-    except Exception:
-        pass
-
-    print(f"Playing {Q.shape[0]} configs, dt stats: min={dts.min():.4f} max={dts.max():.4f} s")
-
-    while True:
-        for i in range(Q.shape[0]):
-            viz.display(Q[i])
-            _foot_markers(viz, model, data, Q[i])
-            time.sleep(float(dts[i]))
-        if not args.loop:
-            break
+        _play_interactive(mujoco, mujoco_viewer, model, frames, dt, loop, args.show_collision)
+    except Exception as exc:
+        raise SystemExit(
+            f"Interactive viewer failed ({exc}). Try offscreen export:\n"
+            f"  MUJOCO_GL=egl python {sys.argv[0]} --amp {txt_path} --video /tmp/go2.mp4\n"
+            "On Linux/Wayland you can also try: export GLFW_USE_WAYLAND=0"
+        ) from exc
 
 
 if __name__ == "__main__":
-    # Allow running without PYTHONPATH if repo root is cwd
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
     main()

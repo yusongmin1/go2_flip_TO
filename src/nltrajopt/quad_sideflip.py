@@ -95,8 +95,7 @@ for k, node in enumerate(opti.nodes):
 
 
 result = opti.solve(200, 1e-3, False, print_level=0)
-opti.save_solution("sideflip")
-
+print(f"[quad_sideflip] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
 
 K = len(result["nodes"])
 dts = [result["nodes"][k]["dt"] for k in range(K)]

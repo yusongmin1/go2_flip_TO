@@ -12,7 +12,6 @@ if __name__ == "__main__":
     run_translation_ramp_3s(
         0,
         -1.0,
-        save_solution_basename="quad_walk_backward_ramp_3s",
         export_run_name="quad_walk_backward_ramp_3s",
         log_prefix="quad_walk_backward_ramp",
         motion_label="backward",

@@ -11,7 +11,6 @@ if __name__ == "__main__":
     run_translation_ramp_3s(
         1,
         -1.0,
-        save_solution_basename="quad_strafe_right_ramp_3s",
         export_run_name="quad_strafe_right_ramp_3s",
         log_prefix="quad_strafe_right_ramp",
         motion_label="strafe right (−y)",

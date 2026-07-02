@@ -132,7 +132,6 @@ print(
     f"[quad_frontflip] Planning time: {result['solve_time']:.4f} s "
     f"(IPOPT iterations: {result['iter_count']})"
 )
-opti.save_solution("quad_frontflip")
 
 export_go2_agile_trajectory(
     _REPO_ROOT,

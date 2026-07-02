@@ -1,19 +1,14 @@
 """
-Export Go2 trajectories as JSON ``Frames`` (``save_as_txt_with_metadata``).
+Export Go2 trajectories as JSON ``Frames`` txt (``save_as_txt_with_metadata``).
 
-**Agile export (50 Hz):** Isaac-style flat rows (``compose_go2_isaac_motion_row``), **one** column order:
-
-``pos(3)``, ``quat(4)`` xyzw, **机体系**线速度 ``v[0:3]``、角速度 ``v[3:6]``, ``dof_pos(12)``,
-``dof_vel(12)``, **key_body(12)** = four triples ``(p_\text{foot}-p_\text{base})`` in **world** frame,
-order ``["FL_foot","FR_foot","RL_foot","RR_foot"]`` (``foot_frame_names`` in ``*.meta.json``).
-
-**Legacy 49-D AMP row** (``compose_amp49_row``): kept for older tooling.
+**Agile export (50 Hz):** 43-D rows via ``export_go2_isaac_motion_txt``:
+``root_pos``, ``root_rot`` xyzw, ``dof_pos``, feet in **base** frame, ``dof_vel``.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pinocchio as pin
@@ -21,7 +16,7 @@ import pinocchio as pin
 # Foot frames (Go2 URDF used by nltrajopt + datasets/go2)
 FOOT_FRAME_NAMES = ("FL_foot", "FR_foot", "RL_foot", "RR_foot")
 
-# Four foot frames; tail columns are ``p_foot_w - p_base_w`` (world-frame vector, m).
+# Four foot frames; key_body columns are foot origin in **base** frame (m).
 GO2_ISAAC_MOTION_FOOT_FRAME_NAMES: Tuple[str, ...] = FOOT_FRAME_NAMES
 
 GO2_ISAAC_FRAME_LAYOUT_DEFAULT = "default"
@@ -187,9 +182,136 @@ def go2_freeflyer_lin_ang_body(v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return v[0:3].copy(), v[3:6].copy()
 
 
+def go2_key_body_pos_in_base(
+    model: pin.Model,
+    data: pin.Data,
+    q: np.ndarray,
+    key_frame_names: Sequence[str],
+) -> np.ndarray:
+    """Foot (key body) origins expressed in the URDF ``base`` frame, shape ``(K, 3)``."""
+    q = np.asarray(q, dtype=np.float64).ravel()
+    pin.forwardKinematics(model, data, q)
+    pin.updateFramePlacements(model, data)
+    base_id = model.getFrameId("base")
+    oMb = data.oMf[base_id]
+    blocks: List[np.ndarray] = []
+    for name in key_frame_names:
+        fid = model.getFrameId(name)
+        blocks.append(np.asarray((oMb.inverse() * data.oMf[fid]).translation, dtype=np.float64).ravel())
+    return np.stack(blocks, axis=0)
+
+
+def build_go2_motion_dataset(
+    model: pin.Model,
+    qs: Sequence[np.ndarray],
+    vs: Sequence[np.ndarray],
+    dts: Sequence[float],
+    fps: float = 50.0,
+    key_frame_names: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Resample to ``fps`` and build the unified motion dict (README keys only).
+    """
+    from datasets.go2_pin_trajectory import revolute_joint_names_in_pin_q_order
+
+    keys = tuple(key_frame_names) if key_frame_names is not None else GO2_ISAAC_MOTION_FOOT_FRAME_NAMES
+    Q = np.stack([np.asarray(q, dtype=np.float64).ravel() for q in qs], axis=0)
+    V = np.stack([np.asarray(v, dtype=np.float64).ravel() for v in vs], axis=0)
+    Qr, Vr, _ = resample_qv_to_fps(dts, Q, V, fps)
+    n_dof = model.nq - 7
+    if n_dof != 12 or model.nv - 6 != 12:
+        raise ValueError("This exporter assumes Go2-style 12-DoF legs (nq=19, nv=18).")
+
+    n = Qr.shape[0]
+    k = len(keys)
+    key_body = np.zeros((n, k, 3), dtype=np.float64)
+    data = model.createData()
+    for i in range(n):
+        key_body[i] = go2_key_body_pos_in_base(model, data, Qr[i], keys)
+
+    return {
+        "fps": float(fps),
+        "root_pos": Qr[:, :3].copy(),
+        "root_rot": Qr[:, 3:7].copy(),
+        "dof_pos": Qr[:, 7 : 7 + n_dof].copy(),
+        "key_body_pos_relative_to_base": key_body,
+        "dof_vel": Vr[:, 6 : 6 + n_dof].copy(),
+        "dof_names": revolute_joint_names_in_pin_q_order(model),
+        "key_body_names": list(keys),
+    }
+
+
+def motion_dataset_to_flat_frames(motion: Dict[str, Any]) -> np.ndarray:
+    """Stack motion arrays into 43-D rows: root_pos, root_rot, dof_pos, feet (base), dof_vel."""
+    kb = np.asarray(motion["key_body_pos_relative_to_base"], dtype=np.float64).reshape(
+        motion["root_pos"].shape[0], -1
+    )
+    return np.hstack(
+        [
+            motion["root_pos"],
+            motion["root_rot"],
+            motion["dof_pos"],
+            kb,
+            motion["dof_vel"],
+        ]
+    )
+
+
+def export_go2_motion_npz(
+    model: pin.Model,
+    qs: Sequence[np.ndarray],
+    vs: Sequence[np.ndarray],
+    dts: Sequence[float],
+    output_path: Union[str, Path],
+    fps: float = 50.0,
+    key_frame_names: Optional[Sequence[str]] = None,
+) -> Path:
+    """Write ``*.npz`` (+ ``*.meta.json``) with unified motion keys."""
+    motion = build_go2_motion_dataset(model, qs, vs, dts, fps=fps, key_frame_names=key_frame_names)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        output_path,
+        fps=np.array(motion["fps"], dtype=np.float64),
+        root_pos=motion["root_pos"],
+        root_rot=motion["root_rot"],
+        dof_pos=motion["dof_pos"],
+        key_body_pos_relative_to_base=motion["key_body_pos_relative_to_base"],
+        dof_vel=motion["dof_vel"],
+        dof_names=np.array(motion["dof_names"], dtype=object),
+        key_body_names=np.array(motion["key_body_names"], dtype=object),
+    )
+    n = int(motion["root_pos"].shape[0])
+    meta_side = output_path.parent / f"{output_path.stem}.motion.meta.json"
+    meta_side.write_text(
+        json.dumps(
+            {
+                "format": "go2_motion",
+                "fps": motion["fps"],
+                "num_frames": n,
+                "num_dof": int(motion["dof_pos"].shape[1]),
+                "num_key_bodies": int(motion["key_body_pos_relative_to_base"].shape[1]),
+                "dof_names": motion["dof_names"],
+                "key_body_names": motion["key_body_names"],
+                "key_body_frame": "base",
+                "root_rot_layout": "xyzw",
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    print(
+        f"[go2_motion] Saved {n} frames @ {fps:g} Hz, "
+        f"keys=root_pos,root_rot,dof_pos,key_body_pos_relative_to_base,dof_vel -> {output_path}"
+    )
+    return output_path
+
+
 def go2_isaac_motion_frame_dim(foot_frame_names: Optional[Sequence[str]] = None) -> int:
     kn = tuple(foot_frame_names) if foot_frame_names is not None else GO2_ISAAC_MOTION_FOOT_FRAME_NAMES
-    return 37 + 3 * len(kn)
+    # root_pos(3) + root_rot(4) + dof_pos(12) + feet(3*K) + dof_vel(12)
+    return 7 + 12 + 3 * len(kn) + 12
 
 
 def compose_go2_isaac_motion_row(
@@ -201,18 +323,9 @@ def compose_go2_isaac_motion_row(
     frame_layout: str = GO2_ISAAC_FRAME_LAYOUT_DEFAULT,
 ) -> np.ndarray:
     """
-    One flat row (Isaac-style JSON ``Frames`` row, **49** floats for Go2):
+    One flat row (**43** floats for Go2):
 
-    ``[root_pos_w(3), quat_xyzw(4), lin_b(3), ang_b(3), dof_pos(12), dof_vel(12),
-       (p_foot - p_base)_w × 4]``
-
-    Foot blocks: **only four foot frames** (``FOOT_FRAME_NAMES`` order); each triple is
-    ``oMf[foot].translation - oMf[base].translation`` in **world** frame (**key_body**).
-
-    Base twist: ``lin_b=v[0:3]``, ``ang_b=v[3:6]`` in **base/body frame** (Go2 free flyer).
-
-    ``frame_layout`` is ignored except ``""`` / ``"default"``; other values raise (legacy
-    ``sideflip`` rows must be reordered to this layout).
+    ``[root_pos_w(3), root_rot_xyzw(4), dof_pos(12), foot_in_base × 4, dof_vel(12)]``
     """
     q = np.asarray(q, dtype=np.float64).ravel()
     v = np.asarray(v, dtype=np.float64).ravel()
@@ -228,25 +341,17 @@ def compose_go2_isaac_motion_row(
 
     root_p = q[:3].copy()
     root_quat = q[3:7].copy()
-    lin_b, ang_b = go2_freeflyer_lin_ang_body(v)
     dof_pos = q[7:19].copy()
     dof_vel = v[6:18].copy()
 
-    base_id = model.getFrameId("base")
-    p_base = np.asarray(data.oMf[base_id].translation, dtype=np.float64).ravel()
-    foot_rel_w: List[np.ndarray] = []
-    for name in feet:
-        fid = model.getFrameId(name)
-        p_foot = np.asarray(data.oMf[fid].translation, dtype=np.float64).ravel()
-        foot_rel_w.append(p_foot - p_base)
-
-    foot_block = np.concatenate(foot_rel_w)
+    key_body = go2_key_body_pos_in_base(model, data, q, feet)
+    foot_block = key_body.reshape(-1)
     if frame_layout not in ("", GO2_ISAAC_FRAME_LAYOUT_DEFAULT):
         raise ValueError(
             f"Unknown or unsupported frame_layout {frame_layout!r}; "
-            "only default pos,quat,lin_b,ang_b,dof_pos,dof_vel,key_body is exported."
+            "only default root_pos,root_rot,dof_pos,key_body,dof_vel is exported."
         )
-    return np.concatenate([root_p, root_quat, lin_b, ang_b, dof_pos, dof_vel, foot_block])
+    return np.concatenate([root_p, root_quat, dof_pos, foot_block, dof_vel])
 
 
 def build_go2_isaac_motion_frames(
@@ -284,48 +389,18 @@ def export_go2_isaac_motion_txt(
     ``key_frame_names`` is deprecated; use ``foot_frame_names`` (same meaning: foot URDF frame names).
     ``frame_layout``: only ``"default"`` / ``""`` (see ``compose_go2_isaac_motion_row``).
     """
+    if frame_layout not in ("", GO2_ISAAC_FRAME_LAYOUT_DEFAULT):
+        raise ValueError(f"Unsupported frame_layout {frame_layout!r}")
     feet = foot_frame_names if foot_frame_names is not None else key_frame_names
-    Q = np.stack([np.asarray(q, dtype=np.float64).ravel() for q in qs], axis=0)
-    V = np.stack([np.asarray(v, dtype=np.float64).ravel() for v in vs], axis=0)
-    Qr, Vr, _ = resample_qv_to_fps(dts, Q, V, fps)
-    frames = build_go2_isaac_motion_frames(model, Qr, Vr, feet, frame_layout=frame_layout)
+    motion = build_go2_motion_dataset(model, qs, vs, dts, fps=fps, key_frame_names=feet)
+    frames = motion_dataset_to_flat_frames(motion)
     dim = frames.shape[1]
     exp = go2_isaac_motion_frame_dim(feet)
     if dim != exp:
         raise RuntimeError(f"Expected {exp}-D frames, got {dim}")
     output_path = Path(output_path)
-    names = tuple(feet) if feet is not None else GO2_ISAAC_MOTION_FOOT_FRAME_NAMES
     save_as_txt_with_metadata(frames, fps, output_path)
-    print(
-        f"[go2_isaac_motion] layout dim={dim}, frame_layout={frame_layout}, "
-        f"foot_frames={len(names)} -> {output_path}"
-    )
-    meta_side = output_path.with_suffix(".meta.json")
-    layout_cols = {
-        "columns_0_2": "root position world (m)",
-        "columns_3_6": "root quaternion xyzw world",
-        "columns_7_9": "root linear velocity base/body frame (m/s)",
-        "columns_10_12": "root angular velocity base/body frame (rad/s)",
-        "columns_13_24": "dof_pos (12), URDF / Pinocchio q[7:] order",
-        "columns_25_36": "dof_vel (12), Pinocchio v[6:] order",
-        "columns_37_48": "key_body (p_foot - p_base) world (m), xyz × 4, order = foot_frame_names",
-    }
-    meta_side.write_text(
-        json.dumps(
-            {
-                "format": "go2_isaac_motion",
-                "fps": fps,
-                "frame_dim": dim,
-                "frame_layout": GO2_ISAAC_FRAME_LAYOUT_DEFAULT,
-                "tail_kind": "foot_relative_base_world",
-                "foot_frame_names": list(names),
-                "layout": layout_cols,
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    print(f"[go2_isaac_motion] {frames.shape[0]} frames, dim={dim} -> {output_path}")
     return output_path
 
 

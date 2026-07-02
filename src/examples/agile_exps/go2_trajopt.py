@@ -96,7 +96,6 @@ print(
     f"[go2_trajopt] Planning time: {result['solve_time']:.4f} s "
     f"(IPOPT iterations: {result['iter_count']})"
 )
-opti.save_solution("go2_trajopt")
 
 export_go2_agile_trajectory(
     _REPO_ROOT,

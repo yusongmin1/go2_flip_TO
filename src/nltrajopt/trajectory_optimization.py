@@ -390,6 +390,9 @@ class NLTrajOpt:
         return results
 
     def save_solution(self, save_name, save_dir: str = "trajopt_solutions_batch"):
+        """Disabled by default. Set ``TRAJOPT_SAVE_SOLUTION=1`` to write JSON under ``save_dir``."""
+        if os.environ.get("TRAJOPT_SAVE_SOLUTION", "").lower() not in ("1", "true", "yes"):
+            return None
 
         solution_dict = self.sol_dict
 

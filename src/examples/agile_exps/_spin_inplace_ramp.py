@@ -52,7 +52,6 @@ def _pin_q_apply_world_yaw(
 def run_spin_inplace_ramp(
     yaw_sign: float,
     *,
-    save_solution_basename: str,
     export_run_name: str,
     mocap_filename: str,
     log_prefix: str,
@@ -137,7 +136,6 @@ def run_spin_inplace_ramp(
         f"[{log_prefix}] Planning time: {result['solve_time']:.4f} s "
         f"(IPOPT iterations: {result['iter_count']})"
     )
-    opti.save_solution(save_solution_basename)
 
     K = len(result["nodes"])
     dts = [result["nodes"][k]["dt"] for k in range(K)]

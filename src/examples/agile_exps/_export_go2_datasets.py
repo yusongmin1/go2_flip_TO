@@ -1,15 +1,12 @@
 """
 Export Go2 trajectories after ``NLTrajOpt`` solves:
 
-- ``datasets/go2/trajectories/<run_name>/`` — NPZ + CSV + ``meta.json`` (Pinocchio/URDF ``q``/``v``).
-- ``datasets/go2/mocap_motions_go2/<mocap_file>`` — **50 Hz** Isaac-style JSON flat frames
-  (``datasets/go2_amp_export.compose_go2_isaac_motion_row``): root pos/quat, base twist,
-  dof_pos/vel, then ``(p_\text{foot}-p_\text{base})`` in **world** frame for the four foot frames only).
+- ``datasets/go2/mocap_motions_go2/<run>_50hz.txt`` — **only** output: JSON ``Frames`` (43-D rows).
 
 Disable with ``GO2_NO_DATASET=1`` (or legacy ``QUAD_SPIN_NO_DATASET=1``).
 
 Root world height: ``GO2_EXPORT_BASE_Z_OFFSET`` (metres, default **0.022**) is
-added to each knot ``q[2]`` before writing NPZ/AMP (set ``0`` to disable).
+added to each knot ``q[2]`` before export (set ``0`` to disable).
 """
 from __future__ import annotations
 
@@ -52,7 +49,6 @@ def export_go2_agile_trajectory(
 
     from datasets.go2_amp_export import export_go2_isaac_motion_txt
     from datasets.go2_base_z_offset import apply_go2_base_z_offset_to_qs, go2_export_base_z_offset_m
-    from datasets.go2_pin_trajectory import save_go2_pin_trajectory_dataset
 
     nodes = result["nodes"]
     K = len(nodes)
@@ -60,24 +56,15 @@ def export_go2_agile_trajectory(
     vs = [nodes[k]["v"] for k in range(K)]
     dts = [nodes[k]["dt"] for k in range(K)]
 
-    dz = go2_export_base_z_offset_m()
-    qs = apply_go2_base_z_offset_to_qs(qs, dz)
+    qs = apply_go2_base_z_offset_to_qs(qs, go2_export_base_z_offset_m())
 
-    meta: Dict[str, Any] = {"run_name": run_name, **(extra_meta or {})}
-    meta["base_z_offset_applied_m"] = dz
-    if isaac_frame_layout != "default":
-        meta["isaac_frame_layout"] = isaac_frame_layout
+    mocap_stem = mocap_filename if mocap_filename else f"{run_name}_50hz"
+    if mocap_stem.endswith(".txt"):
+        mocap_stem = mocap_stem[: -len(".txt")]
 
-    traj_dir = repo_root / "datasets" / "go2" / "trajectories" / run_name
-    save_go2_pin_trajectory_dataset(traj_dir, qs, vs, dts, model, extra_meta=meta)
-
-    tag = log_prefix or run_name
-    print(f"[{tag}] Dataset (NPZ/CSV, URDF joint order) -> {traj_dir}")
-
-    mocap_path = repo_root / "datasets" / "go2" / "mocap_motions_go2" / (
-        mocap_filename if mocap_filename else f"{run_name}_50hz.txt"
-    )
+    mocap_txt = repo_root / "datasets" / "go2" / "mocap_motions_go2" / f"{mocap_stem}.txt"
     export_go2_isaac_motion_txt(
-        model, qs, vs, dts, mocap_path, fps=fps_amp, frame_layout=isaac_frame_layout
+        model, qs, vs, dts, mocap_txt, fps=fps_amp, frame_layout=isaac_frame_layout
     )
-    print(f"[{tag}] Isaac-style mocap JSON {fps_amp:g} Hz -> {mocap_path}")
+    tag = log_prefix or run_name
+    print(f"[{tag}] Mocap txt {fps_amp:g} Hz -> {mocap_txt}")

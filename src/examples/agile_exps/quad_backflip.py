@@ -125,7 +125,6 @@ result = opti.solve(
 if result.get("warning"):
     print(f"[quad_backflip] WARNING: {result['warning']}")
 print(f"[quad_backflip] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
-opti.save_solution("quad_backflip")
 
 export_go2_agile_trajectory(
     _REPO_ROOT,
