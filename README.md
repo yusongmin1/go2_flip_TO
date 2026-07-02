@@ -19,6 +19,7 @@ The videos below showcase various motions that were generated using the implemen
 
 - Evangelos Tsiatsianas (University of Patras) - etsiatsianas@ac.upatras.gr
 - Konstantinos Chatzilygeroudis (University of Patras) - costashatz@upatras.gr
+- yusongmin - 1902219511@qq.com
 
 ## Publication & Citation
 
@@ -85,9 +86,16 @@ python src/examples/simple/go2_trajopt.py --vis
 
 **Agile motions** (`src/examples/agile_exps/`):
 
+Forward / backward walk (3 s diagonal trot, **foot-end Bezier swing trajectory optimization**):
+
 ```bash
 python src/examples/agile_exps/quad_walk_forward.py --vis
 python src/examples/agile_exps/quad_walk_backward_ramp.py --vis
+```
+
+Other agile demos:
+
+```bash
 python src/examples/agile_exps/quad_strafe_left_ramp.py --vis
 python src/examples/agile_exps/quad_strafe_right_ramp.py --vis
 python src/examples/agile_exps/quad_spin_inplace.py --vis
@@ -128,6 +136,9 @@ Agile scripts write **only** `datasets/go2/mocap_motions_go2/<run>_50hz.txt` (JS
 ```bash
 export PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_50hz.txt
+python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_frontflip_50hz.txt
+python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_sideflip_50hz.txt
+python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_jump_forward_1m_50hz.txt
 # 默认循环播放；只播一遍：加 --no-loop
 ```
 
@@ -168,7 +179,6 @@ This work was conducted within the [Laboratory of Automation and Robotics](https
 
 <p align="center">
 <img src="http://lar.ece.upatras.gr/wp-content/uploads/sites/147/2022/10/lar_profile_alpha.png" alt="logo_lar" width="20%"/><br/>
-<img src="https://www.upatras.gr/wp-content/uploads/up_2017_logo_en.png" alt="logo_upatras" width="50%"/><br/>
-<a href="https://www.hrbeu.edu.cn/" title="哈尔滨工程大学"><img src="images/heu_logo.png" alt="logo_heu" width="380"/></a>
+<img src="https://www.upatras.gr/wp-content/uploads/up_2017_logo_en.png" alt="logo_upatras" width="50%"/>
 </p>
 

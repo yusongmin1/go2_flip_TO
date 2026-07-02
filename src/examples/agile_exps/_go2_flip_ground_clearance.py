@@ -15,7 +15,7 @@ JOINT_VEL_ABS_MAX_RAD_S = 18.0
 # Flight: non-contact feet
 FOOT_SWING_CLEARANCE_M = 0.14
 # Stance: contact z = terrain + offset (sole / mesh below foot frame)
-STANCE_FOOT_CLEARANCE_M = 0.05
+STANCE_FOOT_CLEARANCE_M = 0.00
 # Base link origin above ground (body box extends below origin ~5–6 cm in URDF)
 BASE_MIN_CLEARANCE_M = 0.14
 # Hip / thigh / calf origins above ground (deep knee bend on landing)
