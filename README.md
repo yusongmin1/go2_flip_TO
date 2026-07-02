@@ -96,20 +96,15 @@ python src/examples/agile_exps/quad_walk_backward_ramp.py --vis
 Other agile demos:
 
 ```bash
-python src/examples/agile_exps/quad_strafe_left_ramp.py --vis
-python src/examples/agile_exps/quad_strafe_right_ramp.py --vis
-python src/examples/agile_exps/quad_spin_inplace.py --vis
-python src/examples/agile_exps/quad_spin_inplace_reverse.py --vis
 python src/examples/agile_exps/quad_sideflip.py --vis
 python src/examples/agile_exps/quad_backflip.py --vis
 python src/examples/agile_exps/quad_frontflip.py --vis
 python src/examples/agile_exps/quad_jump_forward.py --vis
-python src/examples/agile_exps/go2_trajopt.py --vis
 ```
 
 ### Go2 agile dataset format
 
-Agile scripts write **only** `datasets/go2/mocap_motions_go2/<run>_50hz.txt` (JSON, 50 Hz). Each row is **43** floats:
+Agile scripts write **only** `datasets/go2/mocap_motions_go2/<run>_50hz.txt` (JSON, 50 Hz). Each row is **49** floats:
 
 | 列 | 长度 | 含义 |
 |----|:----:|------|
@@ -117,6 +112,8 @@ Agile scripts write **only** `datasets/go2/mocap_motions_go2/<run>_50hz.txt` (JS
 | `root_rot` | 4 | 四元数 **xyzw** |
 | `dof_pos` | 12 | 关节角（rad），URDF 顺序见下 |
 | `key_body_pos_relative_to_base` | 12 | 四足在**机体系**下的位置（FL/FR/RL/RR × xyz） |
+| `root_lin_vel` | 3 | 基座线速度（m/s，**机体系**） |
+| `root_ang_vel` | 3 | 基座角速度（rad/s，**机体系**） |
 | `dof_vel` | 12 | 关节速度（rad/s），顺序同 `dof_pos` |
 
 `dof_pos` / `dof_vel` 关节顺序：

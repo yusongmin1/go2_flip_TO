@@ -2,9 +2,9 @@
 
 ## Go2 agile 轨迹（`src/examples/agile_exps/quad_*.py`）
 
-求解成功后 **只写** ``datasets/go2/mocap_motions_go2/<run>_50hz.txt``（JSON，50 Hz，每行 43 维）：
+求解成功后 **只写** ``datasets/go2/mocap_motions_go2/<run>_50hz.txt``（JSON，50 Hz，每行 49 维）：
 
-``root_pos(3)`` · ``root_rot`` xyzw ``(4)`` · ``dof_pos(12)`` · 四足机体系位置 ``(12)`` · ``dof_vel(12)``
+``root_pos(3)`` · ``root_rot`` xyzw ``(4)`` · ``dof_pos(12)`` · 四足机体系位置 ``(12)`` · 基座线速度 ``(3)`` · 基座角速度 ``(3)`` · ``dof_vel(12)``
 
 不生成 NPZ / CSV / ``trajectories/`` 目录。跳过导出：`GO2_NO_DATASET=1`。
 

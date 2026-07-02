@@ -1,8 +1,9 @@
 """
 Export Go2 trajectories as JSON ``Frames`` txt (``save_as_txt_with_metadata``).
 
-**Agile export (50 Hz):** 43-D rows via ``export_go2_isaac_motion_txt``:
-``root_pos``, ``root_rot`` xyzw, ``dof_pos``, feet in **base** frame, ``dof_vel``.
+**Agile export (50 Hz):** 49-D rows via ``export_go2_isaac_motion_txt``:
+``root_pos``, ``root_rot`` xyzw, ``dof_pos``, feet in **base** frame,
+``root_lin_vel`` / ``root_ang_vel`` (base frame), ``dof_vel``.
 """
 from __future__ import annotations
 
@@ -235,6 +236,8 @@ def build_go2_motion_dataset(
         "root_rot": Qr[:, 3:7].copy(),
         "dof_pos": Qr[:, 7 : 7 + n_dof].copy(),
         "key_body_pos_relative_to_base": key_body,
+        "root_lin_vel": Vr[:, 0:3].copy(),
+        "root_ang_vel": Vr[:, 3:6].copy(),
         "dof_vel": Vr[:, 6 : 6 + n_dof].copy(),
         "dof_names": revolute_joint_names_in_pin_q_order(model),
         "key_body_names": list(keys),
@@ -242,7 +245,7 @@ def build_go2_motion_dataset(
 
 
 def motion_dataset_to_flat_frames(motion: Dict[str, Any]) -> np.ndarray:
-    """Stack motion arrays into 43-D rows: root_pos, root_rot, dof_pos, feet (base), dof_vel."""
+    """Stack motion arrays into 49-D rows (see ``go2_isaac_motion_frame_dim``)."""
     kb = np.asarray(motion["key_body_pos_relative_to_base"], dtype=np.float64).reshape(
         motion["root_pos"].shape[0], -1
     )
@@ -252,6 +255,8 @@ def motion_dataset_to_flat_frames(motion: Dict[str, Any]) -> np.ndarray:
             motion["root_rot"],
             motion["dof_pos"],
             kb,
+            motion["root_lin_vel"],
+            motion["root_ang_vel"],
             motion["dof_vel"],
         ]
     )
@@ -277,6 +282,8 @@ def export_go2_motion_npz(
         root_rot=motion["root_rot"],
         dof_pos=motion["dof_pos"],
         key_body_pos_relative_to_base=motion["key_body_pos_relative_to_base"],
+        root_lin_vel=motion["root_lin_vel"],
+        root_ang_vel=motion["root_ang_vel"],
         dof_vel=motion["dof_vel"],
         dof_names=np.array(motion["dof_names"], dtype=object),
         key_body_names=np.array(motion["key_body_names"], dtype=object),
@@ -303,15 +310,15 @@ def export_go2_motion_npz(
     )
     print(
         f"[go2_motion] Saved {n} frames @ {fps:g} Hz, "
-        f"keys=root_pos,root_rot,dof_pos,key_body_pos_relative_to_base,dof_vel -> {output_path}"
+        f"keys=root_pos,root_rot,dof_pos,key_body_pos_relative_to_base,root_lin_vel,root_ang_vel,dof_vel -> {output_path}"
     )
     return output_path
 
 
 def go2_isaac_motion_frame_dim(foot_frame_names: Optional[Sequence[str]] = None) -> int:
     kn = tuple(foot_frame_names) if foot_frame_names is not None else GO2_ISAAC_MOTION_FOOT_FRAME_NAMES
-    # root_pos(3) + root_rot(4) + dof_pos(12) + feet(3*K) + dof_vel(12)
-    return 7 + 12 + 3 * len(kn) + 12
+    # root_pos(3) + root_rot(4) + dof_pos(12) + feet(3*K) + lin_b(3) + ang_b(3) + dof_vel(12)
+    return 7 + 12 + 3 * len(kn) + 6 + 12
 
 
 def compose_go2_isaac_motion_row(
@@ -323,9 +330,10 @@ def compose_go2_isaac_motion_row(
     frame_layout: str = GO2_ISAAC_FRAME_LAYOUT_DEFAULT,
 ) -> np.ndarray:
     """
-    One flat row (**43** floats for Go2):
+    One flat row (**49** floats for Go2):
 
-    ``[root_pos_w(3), root_rot_xyzw(4), dof_pos(12), foot_in_base × 4, dof_vel(12)]``
+    ``[root_pos_w(3), root_rot_xyzw(4), dof_pos(12), foot_in_base × 4,
+      root_lin_vel_b(3), root_ang_vel_b(3), dof_vel(12)]``
     """
     q = np.asarray(q, dtype=np.float64).ravel()
     v = np.asarray(v, dtype=np.float64).ravel()
@@ -342,6 +350,7 @@ def compose_go2_isaac_motion_row(
     root_p = q[:3].copy()
     root_quat = q[3:7].copy()
     dof_pos = q[7:19].copy()
+    lin_b, ang_b = go2_freeflyer_lin_ang_body(v)
     dof_vel = v[6:18].copy()
 
     key_body = go2_key_body_pos_in_base(model, data, q, feet)
@@ -349,9 +358,9 @@ def compose_go2_isaac_motion_row(
     if frame_layout not in ("", GO2_ISAAC_FRAME_LAYOUT_DEFAULT):
         raise ValueError(
             f"Unknown or unsupported frame_layout {frame_layout!r}; "
-            "only default root_pos,root_rot,dof_pos,key_body,dof_vel is exported."
+            "only default root_pos,root_rot,dof_pos,key_body,root_vel,dof_vel is exported."
         )
-    return np.concatenate([root_p, root_quat, dof_pos, foot_block, dof_vel])
+    return np.concatenate([root_p, root_quat, dof_pos, foot_block, lin_b, ang_b, dof_vel])
 
 
 def build_go2_isaac_motion_frames(

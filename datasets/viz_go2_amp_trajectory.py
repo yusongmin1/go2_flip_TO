@@ -1,9 +1,9 @@
 """
 Play back Go2 mocap JSON txt (``go2_amp_export.export_go2_isaac_motion_txt``) in MuJoCo.
 
-Each **43-D** row: ``root_pos(3)``, ``root_rot`` xyzw ``(4)``, ``dof_pos(12)``,
-four feet in base frame ``(12)``, ``dof_vel(12)``. Rendering uses ``root_pos`` /
-``root_rot`` / ``dof_pos`` only.
+Each **49-D** row: ``root_pos(3)``, ``root_rot`` xyzw ``(4)``, ``dof_pos(12)``,
+four feet in base frame ``(12)``, ``root_lin_vel`` / ``root_ang_vel`` in base frame ``(3+3)``,
+``dof_vel(12)``. Rendering uses ``root_pos`` / ``root_rot`` / ``dof_pos`` only.
 
 Run from repo root::
 
@@ -100,23 +100,15 @@ def _load_frames_from_txt(path: Path) -> tuple[np.ndarray, float]:
     if frames.ndim != 2:
         raise ValueError(f"Frames must be 2-D, got shape {frames.shape}")
     n_col = frames.shape[1]
+    if n_col == 49:
+        return frames, fps
     if n_col == 43:
         return frames, fps
-    if n_col == 49:
-        out = np.hstack(
-            [
-                frames[:, :7],
-                frames[:, 13:25],
-                frames[:, 37:49],
-                frames[:, 25:37],
-            ]
-        )
-        return out, fps
     if n_col >= 19 and n_col < 43:
         padded = np.zeros((frames.shape[0], 43), dtype=np.float64)
         padded[:, :19] = frames[:, :19]
         return padded, fps
-    raise ValueError(f"Unsupported frame width {n_col} (expected 43)")
+    raise ValueError(f"Unsupported frame width {n_col} (expected 43 or 49)")
 
 
 def _frame_to_qpos(frame: np.ndarray) -> np.ndarray:

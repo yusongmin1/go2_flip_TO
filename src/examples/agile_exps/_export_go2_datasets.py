@@ -1,7 +1,7 @@
 """
 Export Go2 trajectories after ``NLTrajOpt`` solves:
 
-- ``datasets/go2/mocap_motions_go2/<run>_50hz.txt`` — **only** output: JSON ``Frames`` (43-D rows).
+- ``datasets/go2/mocap_motions_go2/<run>_50hz.txt`` — **only** output: JSON ``Frames`` (49-D rows).
 
 Disable with ``GO2_NO_DATASET=1`` (or legacy ``QUAD_SPIN_NO_DATASET=1``).
 
