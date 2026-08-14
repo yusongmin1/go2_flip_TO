@@ -23,13 +23,31 @@ GO2_ISAAC_MOTION_FOOT_FRAME_NAMES: Tuple[str, ...] = FOOT_FRAME_NAMES
 GO2_ISAAC_FRAME_LAYOUT_DEFAULT = "default"
 
 
+def _fmt_float(x: float) -> str:
+    """Plain decimal, sign-consistent: space flag pads positives so '+'/'-' take equal room.
+
+    `` 0.123456`` / ``-0.123456`` — no scientific notation, and no ``+`` (JSON forbids a
+    leading plus; the loader uses ``json.load``). Negative zero is normalised.
+    """
+    s = f"{float(x): .6f}"
+    return " 0.000000" if s == "-0.000000" else s
+
+
 def save_as_txt_with_metadata(frames: np.ndarray, fps: float, output_path: Union[str, Path]) -> None:
     """
     Same structure as ``datasets/ai.py``: JSON with LoopMode, FrameDuration = 1/fps, Frames array.
+
+    Every value is plain decimal ``%.6f`` right-aligned to one **fixed field width**
+    (computed from the data, e.g. 10 chars for Go2 AMP rows whose joint velocities reach
+    ±18), so every row and column lines up exactly and positive/negative numbers occupy
+    identical space.
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     frame_duration = 1.0 / float(fps)
+
+    rows = [[_fmt_float(x) for x in frame] for frame in frames]
+    width = max(len(s) for row in rows for s in row)
 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("{\n")
@@ -40,9 +58,9 @@ def save_as_txt_with_metadata(frames: np.ndarray, fps: float, output_path: Union
         f.write('  "MotionWeight": 0.5,\n')
         f.write('  "Frames": [\n')
 
-        for i, frame in enumerate(frames):
-            frame_str = ", ".join(f"{float(x):.6f}" for x in frame)
-            if i < len(frames) - 1:
+        for i, row in enumerate(rows):
+            frame_str = ", ".join(s.rjust(width) for s in row)
+            if i < len(rows) - 1:
                 f.write(f"    [{frame_str}],\n")
             else:
                 f.write(f"    [{frame_str}]\n")
@@ -51,7 +69,7 @@ def save_as_txt_with_metadata(frames: np.ndarray, fps: float, output_path: Union
         f.write("}\n")
 
     print(f"[go2_amp_export] Saved {frames.shape[0]} frames @ {fps} Hz -> {output_path}")
-    print(f"  FrameDuration={frame_duration:.6f} s, dim={frames.shape[1]}")
+    print(f"  FrameDuration={frame_duration:.6f} s, dim={frames.shape[1]}, field width={width} chars")
 
 
 def _node_times(dts: Sequence[float]) -> np.ndarray:

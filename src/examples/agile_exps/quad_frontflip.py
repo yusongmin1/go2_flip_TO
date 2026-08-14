@@ -180,6 +180,9 @@ export_go2_agile_trajectory(
     "quad_frontflip",
     extra_meta={"source_script": "quad_frontflip.py", "dt_nominal": DT},
     log_prefix="quad_frontflip",
+    # the solver already pins stance feet at the measured mesh standoff — the legacy
+    # +0.022 export offset would double-count it and leave the feet floating
+    base_z_offset=0.0,
 )
 
 K = len(result["nodes"])

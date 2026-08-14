@@ -216,10 +216,19 @@ def _play_interactive(
         _setup_camera(mujoco, model, data, viewer.cam)
         idx = 0
         n = frames.shape[0]
+        # Compensated scheduling: sleep until the next frame's target time so render/sync
+        # overhead does not slow playback below the clip's true speed. If we fall behind,
+        # reset the clock instead of fast-forwarding through frames.
+        t_next = time.perf_counter() + dt
         while viewer.is_running():
             _apply_frame(mujoco, model, data, frames[idx])
             viewer.sync()
-            time.sleep(dt)
+            delay = t_next - time.perf_counter()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                t_next = time.perf_counter()
+            t_next += dt
             idx += 1
             if idx >= n:
                 if loop:

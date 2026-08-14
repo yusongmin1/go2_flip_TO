@@ -43,7 +43,16 @@ def export_go2_agile_trajectory(
     fps_amp: float = 50.0,
     log_prefix: Optional[str] = None,
     isaac_frame_layout: str = "default",
+    base_z_offset: Optional[float] = None,
 ) -> None:
+    """Export the solve result as the Isaac-style AMP mocap txt.
+
+    ``base_z_offset``: metres added to each knot ``q[2]`` before export. ``None`` uses the
+    ``GO2_EXPORT_BASE_Z_OFFSET`` default (0.022, a legacy compensation for the foot mesh
+    hanging below the URDF foot frame). Scripts that already pin stance feet with the
+    measured mesh standoff (e.g. the flip scripts) must pass ``0.0`` — otherwise the feet
+    float above the ground in the exported dataset.
+    """
     if go2_dataset_export_disabled():
         return
 
@@ -56,7 +65,8 @@ def export_go2_agile_trajectory(
     vs = [nodes[k]["v"] for k in range(K)]
     dts = [nodes[k]["dt"] for k in range(K)]
 
-    qs = apply_go2_base_z_offset_to_qs(qs, go2_export_base_z_offset_m())
+    dz = go2_export_base_z_offset_m() if base_z_offset is None else float(base_z_offset)
+    qs = apply_go2_base_z_offset_to_qs(qs, dz)
 
     mocap_stem = mocap_filename if mocap_filename else f"{run_name}_50hz"
     if mocap_stem.endswith(".txt"):
