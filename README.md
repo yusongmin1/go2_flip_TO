@@ -96,7 +96,8 @@ python src/examples/agile_exps/quad_walk_backward_ramp.py --vis
 Other agile demos:
 
 ```bash
-python src/examples/agile_exps/quad_sideflip.py --vis
+python src/examples/agile_exps/quad_sideflip.py --vis        # 侧空翻（向左，roll -2π）
+python src/examples/agile_exps/quad_sideflip_right.py --vis  # 侧空翻（向右，roll +2π）
 python src/examples/agile_exps/quad_backflip.py --vis
 python src/examples/agile_exps/quad_frontflip.py --vis
 python src/examples/agile_exps/quad_jump_forward.py --vis
@@ -135,6 +136,7 @@ export PYTHONPATH="$(pwd):$(pwd)/src/nltrajopt:$(pwd)/src"
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_backflip_50hz.txt
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_frontflip_50hz.txt
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_sideflip_50hz.txt
+python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_sideflip_right_50hz.txt
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_jump_forward_1m_50hz.txt
 # 默认循环播放；只播一遍：加 --no-loop
 ```

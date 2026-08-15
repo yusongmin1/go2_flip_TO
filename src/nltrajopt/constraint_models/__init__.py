@@ -16,3 +16,4 @@ from .centroidal_dynamics import CentroidalDynamics
 from .dt_constraint import TimeConstraint
 from .go2_lr_leg_symmetry import Go2LeftRightLegSymmetryConstraints
 from .go2_mesh_collision import Go2MeshCollisionConstraints
+from .base_angular_velocity_limit import BaseAngularVelocityLimitConstraints

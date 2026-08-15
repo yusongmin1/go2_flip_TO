@@ -1,5 +1,6 @@
 """
-Go2 sideflip (roll -2π in flight).
+Go2 **right** sideflip (roll +2π in flight) — the mirror of ``quad_sideflip``
+(left roll -2π, landing offset +y): warm start rolls about +x, target offsets -y.
 
 Same constraint stack as the front/back flips (see ``_go2_flip_ground_clearance`` and the
 ``quad_backflip`` docstring): mesh self-collision + mesh-vs-ground hard constraints, base
@@ -194,13 +195,13 @@ def build_and_solve():
     opti.set_initial_pose(q)
     apply_joint_velocity_cap(opti, JOINT_VEL_ABS_MAX_RAD_S)
     qf = np.copy(q)
-    qf[1] = 0.3
+    qf[1] = -0.3
     opti.set_target_pose(qf)
 
-    # warm start: full 2*pi rotation in roll
+    # warm start: full +2*pi rotation in roll (right sideflip)
     for k, node in enumerate(opti.nodes):
         if k1 <= k <= k2:
-            theta = -2 * np.pi * (k - k1) / (k2 - k1)
+            theta = 2 * np.pi * (k - k1) / (k2 - k1)
             opti.x0[node.q_id] = reprutils.rpy2rep(q, [theta, 0.0, 0.0])
 
     result = opti.solve(
@@ -211,20 +212,20 @@ def build_and_solve():
         accept_max_iter_exceeded=True,
     )
     if result.get("warning"):
-        print(f"[quad_sideflip] WARNING: {result['warning']}")
-    print(f"[quad_sideflip] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
+        print(f"[quad_sideflip_right] WARNING: {result['warning']}")
+    print(f"[quad_sideflip_right] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
     return result
 
 
-result = solve_isolated(build_and_solve, max_attempts=4, tag="quad_sideflip")
+result = solve_isolated(build_and_solve, max_attempts=4, tag="quad_sideflip_right")
 
 export_go2_agile_trajectory(
     _REPO_ROOT,
     result,
     Go2().model,
-    "quad_sideflip",
-    extra_meta={"source_script": "quad_sideflip.py", "dt_nominal": DT},
-    log_prefix="quad_sideflip",
+    "quad_sideflip_right",
+    extra_meta={"source_script": "quad_sideflip_right.py", "dt_nominal": DT},
+    log_prefix="quad_sideflip_right",
     # the solver already pins stance feet at the measured mesh standoff — the legacy
     # +0.022 export offset would double-count it and leave the feet floating
     base_z_offset=0.0,
@@ -239,7 +240,7 @@ forces = [result["nodes"][k]["forces"] for k in range(K)]
 # Go2 ``JointModelFreeFlyer``: v[0:3] = 机体系**线速度** (m/s), v[3:6] = 机体系**角速度** (rad/s)。
 omega_b = np.stack([v[3:6] for v in vs], axis=0)
 print(
-    f"[quad_sideflip] 基座角速度范数 max={np.linalg.norm(omega_b, axis=1).max():.4f} rad/s "
+    f"[quad_sideflip_right] 基座角速度范数 max={np.linalg.norm(omega_b, axis=1).max():.4f} rad/s "
     f"(上限 {BASE_ANGULAR_VEL_MAX_RAD_S}), {K} 个节点"
 )
 

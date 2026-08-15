@@ -12,6 +12,12 @@ from typing import Any, Dict
 # Cap joint-rate magnitude on ``vq[6:]`` (rad/s), intersected with URDF limits.
 JOINT_VEL_ABS_MAX_RAD_S = 18.0
 
+# Hard cap on the **base** angular velocity norm ||vq[3:6]|| (rad/s) — the flip rotation
+# rate. Without it the whole 2*pi unrolls inside the flight phase (~15.7 rad/s for a 0.4 s
+# flight). A full flip at 12 rad/s needs >= 0.524 s of rotation, so flight phases must be
+# ~0.55 s (see the flip scripts).
+BASE_ANGULAR_VEL_MAX_RAD_S = 12.0
+
 # Flight: non-contact feet
 FOOT_SWING_CLEARANCE_M = 0.14
 # Stance: contact z = terrain + offset (sole / mesh below foot frame)

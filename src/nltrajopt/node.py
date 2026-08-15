@@ -11,6 +11,7 @@ class Node:
         terrain_body_clearance: Optional[Dict[str, float]] = None,
         go2_lr_leg_symmetry: bool = False,
         go2_mesh_collision_rows: Optional[int] = None,
+        base_angular_velocity_limit: bool = False,
     ):
         self.nv = nv
         self.contact_fnames = contact_fnames
@@ -21,6 +22,8 @@ class Node:
         self.c_go2_lr_sym_id: Optional[slice] = None
         self.go2_mesh_collision_rows = go2_mesh_collision_rows
         self.c_go2_mesh_col_id: Optional[slice] = None
+        self.base_angular_velocity_limit = base_angular_velocity_limit
+        self.c_base_w_id: Optional[slice] = None
 
         self.constraints_list = []
         self.costs_list = []
@@ -148,3 +151,9 @@ class Node:
                 prev_slice.stop, prev_slice.stop + self.go2_mesh_collision_rows
             )
             self.c_dim += self.go2_mesh_collision_rows
+            prev_slice = self.c_go2_mesh_col_id
+
+        if self.base_angular_velocity_limit:
+            # 1 row: ||vq[3:6]|| <= max_omega — see BaseAngularVelocityLimitConstraints
+            self.c_base_w_id = slice(prev_slice.stop, prev_slice.stop + 1)
+            self.c_dim += 1
