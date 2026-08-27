@@ -42,6 +42,8 @@ from _go2_flip_ground_clearance import (
     go2_foot_mesh_standoff_m,
     apply_joint_velocity_cap,
     terrain_body_clearance_dict,
+    STAND_DWELL_TIME_S,
+    stand_dwell_costs,
 )
 from _flip_solve_isolated import solve_isolated
 
@@ -136,13 +138,21 @@ def build_and_solve():
 
     contact_scheduler = ContactScheduler(robot.model, dt=DT, contact_frame_dict=contacts_dict)
 
-    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], 1.0)
+    # 起始站稳 0.4 s → 下蹲 0.5 s（只许蹲）→ 蓄力 0.1 s（最低点速度≈0）
+    # → 腾空 0.55 s → 落地缓冲 0.6 s → 结束站稳 0.4 s
+    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], STAND_DWELL_TIME_S)
+    k0 = len(contact_scheduler.contact_sequence_fnames)
+    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], 0.5)
+    k_load = len(contact_scheduler.contact_sequence_fnames)
+    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], 0.1)
     k1 = len(contact_scheduler.contact_sequence_fnames)
     # 0.55 s flight: with the 12 rad/s base-rotation cap a full 2*pi needs >= 0.524 s of
     # rotation, so the flip cannot unroll inside the old 0.4 s flight
     contact_scheduler.add_phase([], 0.55)
     k2 = len(contact_scheduler.contact_sequence_fnames)
-    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], 1.0)
+    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], 1.0 - STAND_DWELL_TIME_S)
+    k3 = len(contact_scheduler.contact_sequence_fnames)
+    contact_scheduler.add_phase(["l_foot", "r_foot", "l_gripper", "r_gripper"], STAND_DWELL_TIME_S)
 
     frame_contact_seq = contact_scheduler.contact_sequence_fnames
     contact_frame_names = robot.left_foot_frames + robot.right_foot_frames + robot.left_gripper_frames + robot.right_gripper_frames
@@ -190,6 +200,11 @@ def build_and_solve():
 
         stages.append(stage_node)
 
+    # 首尾站稳段：构型拉向默认姿态 + 关节速度惩罚，站稳后再起跳 / 落定后再结束
+    _cfg_cost, _vel_cost = stand_dwell_costs(robot.model, q)
+    for _k in list(range(0, k0)) + list(range(k3, len(stages))):
+        stages[_k].costs_list.extend([_cfg_cost, _vel_cost])
+
     opti = NLTrajOpt(model=robot.model, nodes=stages, dt=DT)
 
     opti.set_initial_pose(q)
@@ -198,22 +213,72 @@ def build_and_solve():
     qf[1] = -0.3
     opti.set_target_pose(qf)
 
-    # warm start: full +2*pi rotation in roll (right sideflip)
+    # warm start（阶段 A 用）：翻滚角线性展开（沿用原始脚本）
     for k, node in enumerate(opti.nodes):
         if k1 <= k <= k2:
             theta = 2 * np.pi * (k - k1) / (k2 - k1)
             opti.x0[node.q_id] = reprutils.rpy2rep(q, [theta, 0.0, 0.0])
 
-    result = opti.solve(
-        300,
-        7e-3,
-        False,
-        print_level=0,
-        accept_max_iter_exceeded=True,
-    )
+    def _solve_chained(tag, max_rounds=3):
+        """≤300 轮/次的续算链：未收敛则 x0=当前解接着算（该 NLP 固有收敛区间
+        250~350 轮，单次 300 上限卡在边界，靠运气）"""
+        res = None
+        for _round in range(max_rounds):
+            res = opti.solve(
+                300,
+                7e-3,
+                False,
+                print_level=0,
+                accept_max_iter_exceeded=True,
+            )
+            print(
+                f"[quad_sideflip_right] {tag} round {_round + 1}: {res['solve_time']:.1f} s "
+                f"({res['iter_count']} iters, warning={res.get('warning')})"
+            )
+            if not res.get("warning"):
+                return res
+            opti.x0 = np.asarray(opti.sol, dtype=float).copy()
+        return res
+
+    # ---- 阶段 A：不启用下蹲时序约束，解"原"问题 ----
+    result_a = _solve_chained("stage A")
+
+    # ---- 阶段 B：以下蹲时序约束（站稳带 + 单调坡道 + 最低点竖直速度带）重解，
+    # 暖启动 = 阶段 A 的解。两组约束直接从冷启动解会在 300 轮内不收敛 ----
+    _lb_backup = list(opti.lb)
+    _ub_backup = list(opti.ub)
+
+    _n_crouch = max(k_load - k0, 1)
+    _THIGH_END = 1.3
+    for _k in range(k0, k_load):
+        _node = opti.nodes[_k]
+        _s = (_k - k0 + 1) / _n_crouch
+        _th_lo = 0.8 + (_THIGH_END - 0.8) * _s
+        # 只用 thigh 下界坡道保证"单调下蹲、不许比站立更直"；不加 calf 上界 ——
+        # 阶段 A 的自然深蹲 calf 到 -3.4，calf 封顶会挡住深蹲导致不可解
+        for _jn in ("FL_thigh_joint", "FR_thigh_joint", "RL_thigh_joint", "RR_thigh_joint"):
+            _iq = robot.model.joints[robot.model.getJointId(_jn)].idx_q
+            _ti = _node.q_id.start + 6 + (_iq - 7)
+            opti.lb[_ti] = max(opti.lb[_ti] if opti.lb[_ti] is not None else -np.inf, _th_lo)
+
+    # 最低点速度≈0 不额外加带：下蹲最低点本身就是 vz 过零的转折点（阶段 A 自然
+    # 满足），硬加速度带会打乱整个下蹲节拍（实测 300 轮不收敛）
+
+    opti.x0 = np.asarray(opti.sol, dtype=float).copy()
+    # 暖启动也按坡道剪裁（阶段 A 的解可能违反新边界）
+    for _k in range(0, k_load):
+        _node = opti.nodes[_k]
+        for _jn, _side in (("FL_thigh_joint", "th"), ("FR_thigh_joint", "th"),
+                           ("RL_thigh_joint", "th"), ("RR_thigh_joint", "th"),
+                           ("FL_calf_joint", "ca"), ("FR_calf_joint", "ca"),
+                           ("RL_calf_joint", "ca"), ("RR_calf_joint", "ca")):
+            _iq = robot.model.joints[robot.model.getJointId(_jn)].idx_q
+            _ti = _node.q_id.start + 6 + (_iq - 7)
+            opti.x0[_ti] = np.clip(opti.x0[_ti], opti.lb[_ti], opti.ub[_ti])
+
+    result = _solve_chained("stage B")
     if result.get("warning"):
         print(f"[quad_sideflip_right] WARNING: {result['warning']}")
-    print(f"[quad_sideflip_right] Planning time: {result['solve_time']:.4f} s (IPOPT iterations: {result['iter_count']})")
     return result
 
 

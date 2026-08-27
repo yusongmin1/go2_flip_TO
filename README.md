@@ -138,7 +138,7 @@ python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/q
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_sideflip_50hz.txt
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_sideflip_right_50hz.txt
 python datasets/viz_go2_amp_trajectory.py --amp datasets/go2/mocap_motions_go2/quad_jump_forward_1m_50hz.txt
-# 默认循环播放；只播一遍：加 --no-loop
+# 默认循环播放；只播一遍：加 --no-loop 
 ```
 
 若交互窗口 **段错误 / GLX 报错**（Linux 显卡驱动常见），用离屏导出 MP4：

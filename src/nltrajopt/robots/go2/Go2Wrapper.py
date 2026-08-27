@@ -36,15 +36,19 @@ class Go2:
         pin.updateFramePlacements(self.model, self.data)  # Update frames
 
     def go_neutral(self):
+        """AMP 默认姿态（Isaac action=0 目标角）：hip 0 / thigh 0.8 / calf -1.5。
+
+        thigh 由 0.7 改为 0.8；该角度下足端相对基座高度仍为 0.31131，站高不变。
+        """
         q = pin.neutral(self.model)
         q[2] = 0.31131
-        q[8] = 0.7
+        q[8] = 0.8
         q[9] = -1.5
-        q[11] = 0.7
+        q[11] = 0.8
         q[12] = -1.5
-        q[14] = 0.7
+        q[14] = 0.8
         q[15] = -1.5
-        q[17] = 0.7
+        q[17] = 0.8
         q[18] = -1.5
 
         self.fk_all(q)

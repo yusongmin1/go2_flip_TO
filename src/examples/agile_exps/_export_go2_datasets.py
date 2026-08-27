@@ -68,6 +68,9 @@ def export_go2_agile_trajectory(
     dz = go2_export_base_z_offset_m() if base_z_offset is None else float(base_z_offset)
     qs = apply_go2_base_z_offset_to_qs(qs, dz)
 
+    # 注：任务本身从/至 AMP 默认姿态（``Go2.go_neutral``，hip 0 / thigh 0.8 /
+    # calf -1.5）规划，导出无需再补首尾插值段
+
     mocap_stem = mocap_filename if mocap_filename else f"{run_name}_50hz"
     if mocap_stem.endswith(".txt"):
         mocap_stem = mocap_stem[: -len(".txt")]

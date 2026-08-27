@@ -117,3 +117,26 @@ def apply_joint_velocity_cap(opti: Any, cap_rad_s: float) -> None:
             nhi = cap_rad_s if hi is None else min(float(hi), cap_rad_s)
             opti.lb[i] = nlo
             opti.ub[i] = nhi
+
+
+# --- 首尾站稳段（stand dwell）--------------------------------------------------------------
+# 动作开始前 / 结束后在 AMP 默认姿态上站稳的时长与代价权重。首末节点虽然被钉死在
+# 默认姿态，但没有站稳段时求解器从第 1 帧就开始动作（0.1 s 后关节即偏离默认角），
+# 因此在接触时序里加一段全支撑"站稳相"，用构型 + 速度代价把机器人按在默认姿态。
+STAND_DWELL_TIME_S = 0.4
+STAND_DWELL_CFG_WEIGHT = 0.5
+STAND_DWELL_VEL_WEIGHT = 1e-3
+
+
+def stand_dwell_costs(model, q_stand_pin):
+    """站稳段代价（构型拉向默认姿态 + 关节速度惩罚），返回 (ConfigurationCost, JointVelocityCost)。"""
+    import numpy as np
+    import utils as reprutils
+    from cost_models import ConfigurationCost, JointVelocityCost
+
+    q_ref = reprutils.pin2rep(q_stand_pin)
+    nj = model.nv - 6
+    return (
+        ConfigurationCost(q_ref[6:], np.eye(nj) * STAND_DWELL_CFG_WEIGHT),
+        JointVelocityCost(np.zeros(nj), np.eye(nj) * STAND_DWELL_VEL_WEIGHT),
+    )
